@@ -69,8 +69,10 @@ function openRecord(resource, id = '') {
   state.formDirty = false;
   state.modal = { type: 'record', resource, record: id ? state.records.find(record => record.id === id) : null };
   render();
-  if (resource === 'computadores') api('/api/computer-groups').then(result => { if (state.modal?.type === 'record' && state.modal.resource === 'computadores' && !state.formDirty) { state.computerGroups = result.groups; render(); } }).catch(error => toast(error.message));
+  addObservationField();
+  if (resource === 'computadores') api('/api/computer-groups').then(result => { if (state.modal?.type === 'record' && state.modal.resource === 'computadores' && !state.formDirty) { state.computerGroups = result.groups; render(); addObservationField(); } }).catch(error => toast(error.message));
 }
+function addObservationField() { const form = document.querySelector('.modal form'); if (!form || form.querySelector('[name="observacoes"]')) return; const field = document.createElement('label'); field.className = 'field observations-field'; field.innerHTML = 'Observações<textarea name="observacoes" rows="5" maxlength="5000" placeholder="Registre informações, atualizações e próximos passos."></textarea>'; field.querySelector('textarea').value = state.modal?.record?.observacoes || ''; const anchor = form.querySelector('.checklist') || form.querySelector('.modal-actions'); form.insertBefore(field, anchor); }
 function openStatusManager() { state.modal = { type: 'statuses' }; render(); }
 async function openGroupManager() { try { state.computerGroups = (await api('/api/computer-groups')).groups; state.modal = { type: 'computer-groups' }; render(); } catch (error) { toast(error.message); } }
 function addStatus() { const row = document.createElement('label'); row.className = 'status-editor'; row.innerHTML = '<input name="status" required maxlength="50" placeholder="Novo status"/><button type="button" onclick="this.parentElement.remove()">×</button>'; $('#status-fields').append(row); }
@@ -104,5 +106,6 @@ function toast(message) { $('.toast')?.remove(); const toastElement = document.c
 async function boot() { if (!state.token) return render(); try { const me = await api('/api/me'); state.user = me.user; state.networkUrls = me.networkUrls || []; load(); } catch { state.token = null; localStorage.removeItem(TOKEN); render(); } }
 document.addEventListener('input', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
 document.addEventListener('change', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
+document.addEventListener('dblclick', event => { const card = event.target.closest('.demand-card'); if (!card || event.target.closest('select')) return; const match = card.getAttribute('ondragstart')?.match(/'([^']+)'/); if (match) openRecord('demandas', match[1]); });
 setInterval(() => { if (state.token && state.user && !state.modal && !state.formDirty && !state.loading && state.page !== 'localizacao') load(); }, 15000);
 boot();
