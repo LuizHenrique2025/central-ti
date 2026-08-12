@@ -33,11 +33,12 @@ const resourceDefinitions = {
   materiais: ['item', 'categoria', 'quantidade', 'minimo'],
   recepcoes: ['visitante', 'empresa', 'destino', 'data'],
   equipamentos: ['patrimonio', 'equipamento', 'modelo', 'responsavel', 'condicao', 'avaliacao'],
+  ramais: ['ramal', 'setor', 'responsavel', 'status', 'funcionamento'],
   redes: ['nome', 'ip', 'localizacao', 'status'],
   patrimonio: ['codigo', 'descricao', 'localizacao', 'situacao'],
   demandas: ['titulo', 'solicitante', 'prioridade', 'status']
 };
-const access = { admin: Object.keys(resourceDefinitions), ti: ['computadores', 'materiais', 'equipamentos', 'redes', 'patrimonio', 'demandas'], recepcao: ['recepcoes'], consulta: [] };
+const access = { admin: Object.keys(resourceDefinitions), ti: ['computadores', 'materiais', 'equipamentos', 'ramais', 'redes', 'patrimonio', 'demandas'], recepcao: ['recepcoes'], consulta: [] };
 const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
 
 function id() { return crypto.randomUUID(); }
@@ -276,8 +277,9 @@ async function api(req, res, url) {
   }
   if (req.method === 'GET' && pathname === '/api/dashboard') {
     const counts = {}; for (const resource of Object.keys(resourceDefinitions)) if (canAccess(user, resource)) counts[resource] = (await store.records(resource)).length;
-    const demands = canAccess(user, 'demandas') ? (await store.records('demandas')).filter(d => d.status !== 'Concluída') : []; const maintenance = (await Promise.all(['computadores', 'equipamentos', 'redes'].filter(resource => canAccess(user, resource)).map(resource => store.records(resource)))).flat().filter(item => /manutenção/i.test(item.status || item.condicao || '')).length; const inbox = (await store.messagesFor(user.id)).filter(message => message.recipientId === user.id && !message.readAt).length;
-    const notifications = (await Promise.all(['computadores', 'equipamentos'].filter(resource => canAccess(user, resource)).map(async resource => (await store.records(resource)).map(record => ({ resource, record }))))).flat().map(({ resource, record }) => {
+    const demands = canAccess(user, 'demandas') ? (await store.records('demandas')).filter(d => d.status !== 'Concluída') : []; const maintenance = (await Promise.all(['computadores', 'equipamentos', 'ramais', 'redes'].filter(resource => canAccess(user, resource)).map(resource => store.records(resource)))).flat().filter(item => /manutenção/i.test(item.status || item.condicao || item.funcionamento || '')).length; const inbox = (await store.messagesFor(user.id)).filter(message => message.recipientId === user.id && !message.readAt).length;
+    const notifications = (await Promise.all(['computadores', 'equipamentos', 'ramais'].filter(resource => canAccess(user, resource)).map(async resource => (await store.records(resource)).map(record => ({ resource, record }))))).flat().map(({ resource, record }) => {
+      if (resource === 'ramais') { const avaliacao = record.funcionamento || 'Bom funcionamento'; if (avaliacao === 'Bom funcionamento') return null; return { id: record.id, resource, avaliacao, titulo: `Ramal ${record.ramal}`, detalhe: `${record.setor} · ${record.responsavel}` }; }
       const automatic = !record.avaliacao && /manutenção/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : null;
       const avaliacao = record.avaliacao || automatic || 'Bom';
       if (avaliacao === 'Bom') return null;
@@ -293,7 +295,7 @@ async function api(req, res, url) {
     const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
     const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => [resource, (await store.records(resource)).filter(inPeriod)])));
     const modules = visible.map(resource => ({ resource, total: data[resource].length }));
-    const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao })));
+    const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao }))).concat((data.ramais || []).filter(record => record.funcionamento && record.funcionamento !== 'Bom funcionamento').map(record => ({ resource: 'ramais', item: `Ramal ${record.ramal}`, responsavel: record.responsavel, avaliacao: record.funcionamento })));
     const demands = data.demandas || []; const demandStatus = ['Aberta', 'Em andamento', 'Concluída'].map(status => ({ status, total: demands.filter(record => record.status === status).length })); const lowStock = (data.materiais || []).filter(record => Number(record.quantidade) <= Number(record.minimo)).map(record => ({ item: record.item, quantidade: record.quantidade, minimo: record.minimo }));
     return respond(res, 200, { generatedAt: now(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, lowStock });
   }
