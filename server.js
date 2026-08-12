@@ -178,7 +178,16 @@ function recordAttempt(req, success) { const ip = clientIp(req); if (success) re
 async function getAuth(req) { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); const session = token && sessions.get(token); if (!session || session.expiresAt < Date.now()) { if (token) sessions.delete(token); return null; } return store.findUser(session.userId); }
 function canAccess(user, resource, mode = 'read') { if (user.perfil === 'admin') return true; if (mode === 'read' && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
 async function requireAuth(req, res) { const user = await getAuth(req); if (!user) { error(res, 401, 'Sua sessão expirou. Entre novamente.'); return null; } return user; }
-function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : ''; if (!value || value.length > 250) return null; item[key] = value; } return item; }
+function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : ''; if (!value || value.length > 250) return null; item[key] = value; } if (values.tipo === 'externa') { for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; item[key] = value; } if (!/^\S+@\S+\.\S+$/.test(item.email)) return null; item.tipo = 'externa'; } else if (keys === resourceDefinitions.demandas) item.tipo = 'interna'; return item; }
+function sanitizeDemand(values) {
+  const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
+  demand.tipo = values.tipo === 'externa' ? 'externa' : 'interna';
+  if (demand.tipo === 'externa') {
+    for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; demand[key] = value; }
+    if (!/^\S+@\S+\.\S+$/.test(demand.email)) return null;
+  }
+  return demand;
+}
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
 function validateRecordCharacters(resource, payload) {
@@ -206,7 +215,8 @@ function assetSituation(resource, record) {
 }
 function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.modelo}`; }
 async function ensurePatrimonyCodeAvailable(resource, record, recordId = null) {
-  if (!isAsset(resource) || !record.patrimonio || record.patrimonio === 'Não informado') return 'Informe um código patrimonial válido.';
+  if (!isAsset(resource)) return null;
+  if (!record.patrimonio || record.patrimonio === 'Não informado') return 'Informe um código patrimonial válido.';
   const existing = (await store.records('patrimonio')).find(item => item.codigo.toLowerCase() === record.patrimonio.toLowerCase() && !(item.origem === resource && item.origemId === recordId));
   return existing ? `O patrimônio ${record.patrimonio} já está vinculado a outro item.` : null;
 }
