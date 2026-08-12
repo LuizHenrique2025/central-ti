@@ -53,7 +53,21 @@ function initialData() {
   const record = (data) => ({ id: id(), ...data, createdAt: now(), updatedAt: now() });
   return { users: [admin, ti, recepcao], computadores: [record({ patrimonio: 'PC-0048', responsavel: 'Mariana Costa', localizacao: 'Financeiro', status: 'Ativo', avaliacao: 'Bom' }), record({ patrimonio: 'PC-0051', responsavel: 'João Victor', localizacao: 'Recepção', status: 'Em manutenção', avaliacao: 'Precisa de manutenção' })], materiais: [record({ item: 'Toner HP 85A', categoria: 'Impressão', quantidade: '8', minimo: '4' }), record({ item: 'Cabo de rede CAT6', categoria: 'Rede', quantidade: '42', minimo: '20' })], recepcoes: [record({ visitante: 'Carlos Mendes', empresa: 'Mendes & Filhos', destino: 'Compras', data: '11/08/2026' })], equipamentos: [record({ equipamento: 'Projetor', modelo: 'Epson PowerLite X49', responsavel: 'Sala de reuniões', condicao: 'Operacional', avaliacao: 'Bom' })], redes: [record({ nome: 'Firewall principal', ip: '192.168.1.1', localizacao: 'Rack TI', status: 'Online' })], patrimonio: [record({ codigo: 'PAT-1022', descricao: 'Mesa de escritório', localizacao: 'Financeiro', situacao: 'Em uso' })], demandas: [record({ titulo: 'Instalar impressora no RH', solicitante: 'Sandra Lima', prioridade: 'Média', status: 'Em andamento' }), record({ titulo: 'Acesso ao sistema financeiro', solicitante: 'Felipe Rocha', prioridade: 'Alta', status: 'Aberta' })], demandStatuses: ['Aberta', 'Em andamento', 'Concluída'], messages: [record({ senderId: ti.id, recipientId: admin.id, subject: 'Bem-vindo à Central TI', body: 'Seu acesso ao painel foi configurado com sucesso.', readAt: null })], auditLogs: [] };
 }
+function repairTextEncoding(value) {
+  if (typeof value !== 'string' || !/[\u00C3\u00C2\u00E2]/.test(value)) return value;
+  const windows1252 = new Map([[0x20AC, 0x80], [0x201A, 0x82], [0x0192, 0x83], [0x201E, 0x84], [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02C6, 0x88], [0x2030, 0x89], [0x0160, 0x8A], [0x2039, 0x8B], [0x0152, 0x8C], [0x017D, 0x8E], [0x2018, 0x91], [0x2019, 0x92], [0x201C, 0x93], [0x201D, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97], [0x02DC, 0x98], [0x2122, 0x99], [0x0161, 0x9A], [0x203A, 0x9B], [0x0153, 0x9C], [0x017E, 0x9E], [0x0178, 0x9F]]);
+  const bytes = []; for (const char of value) { const point = char.codePointAt(0); const byte = point <= 0xFF ? point : windows1252.get(point); if (byte === undefined) return value; bytes.push(byte); }
+  const repaired = Buffer.from(bytes).toString('utf8');
+  return repaired !== value && !repaired.includes('\uFFFD') ? repaired : value;
+}
+function repairStoredText(value) {
+  if (typeof value === 'string') return repairTextEncoding(value);
+  if (Array.isArray(value)) return value.map(repairStoredText);
+  if (value && typeof value === 'object') { for (const [key, item] of Object.entries(value)) value[key] = repairStoredText(item); }
+  return value;
+}
 function normalizeFileDb(data) {
+  repairStoredText(data);
   for (const key of [...Object.keys(resourceDefinitions), 'users', 'messages', 'auditLogs']) data[key] ||= [];
   for (const user of data.users) if (user.mustChangePassword === undefined) user.mustChangePassword = verifyPassword('123456', user);
   data.demandStatuses ||= ['Aberta', 'Em andamento', 'Concluída'];
@@ -164,7 +178,7 @@ function recordAttempt(req, success) { const ip = clientIp(req); if (success) re
 async function getAuth(req) { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); const session = token && sessions.get(token); if (!session || session.expiresAt < Date.now()) { if (token) sessions.delete(token); return null; } return store.findUser(session.userId); }
 function canAccess(user, resource, mode = 'read') { if (user.perfil === 'admin') return true; if (mode === 'read' && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
 async function requireAuth(req, res) { const user = await getAuth(req); if (!user) { error(res, 401, 'Sua sessão expirou. Entre novamente.'); return null; } return user; }
-function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? String(values[key]).trim() : ''; if (!value || value.length > 250) return null; item[key] = value; } return item; }
+function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : ''; if (!value || value.length > 250) return null; item[key] = value; } return item; }
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
 function validateRecordCharacters(resource, payload) {
@@ -265,14 +279,14 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/computer-groups') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); return respond(res, 200, { groups: await store.computerGroups() }); }
   if (req.method === 'PUT' && pathname === '/api/computer-groups') {
     if (!canAccess(user, 'computadores', 'write')) return error(res, 403, 'Você não tem permissão para alterar os grupos.');
-    const { groups } = await requestBody(req); const clean = Array.isArray(groups) ? [...new Set(groups.map(group => String(group).trim()).filter(group => group.length >= 2 && group.length <= 50 && /^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(group)))] : [];
+    const { groups } = await requestBody(req); const clean = Array.isArray(groups) ? [...new Set(groups.map(group => repairTextEncoding(String(group).trim())).filter(group => group.length >= 2 && group.length <= 50 && /^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(group)))] : [];
     if (!clean.length || clean.length > 30) return error(res, 422, 'Informe de 1 a 30 grupos, com 2 a 50 caracteres cada.');
     const inUse = (await store.records('computadores')).map(record => record.grupo).filter(group => group && !clean.includes(group));
     if (inUse.length) return error(res, 422, `Não é possível remover grupos em uso: ${[...new Set(inUse)].join(', ')}.`);
     await store.setComputerGroups(clean); await log(user.id, 'alterou grupos de computadores', 'computadores', null, { groups: clean }); return respond(res, 200, { groups: clean });
   }
   if (req.method === 'PUT' && pathname === '/api/demand-statuses') {
-    if (!canAccess(user, 'demandas', 'write')) return error(res, 403, 'Você não tem permissão para alterar os status.'); const { statuses } = await requestBody(req); const clean = Array.isArray(statuses) ? [...new Set(statuses.map(status => String(status).trim()).filter(status => status.length >= 2 && status.length <= 50))] : [];
+    if (!canAccess(user, 'demandas', 'write')) return error(res, 403, 'Você não tem permissão para alterar os status.'); const { statuses } = await requestBody(req); const clean = Array.isArray(statuses) ? [...new Set(statuses.map(status => repairTextEncoding(String(status).trim())).filter(status => status.length >= 2 && status.length <= 50))] : [];
     if (!clean.length || clean.length > 12) return error(res, 422, 'Informe de 1 a 12 status, com 2 a 50 caracteres cada.'); const inUse = (await store.records('demandas')).map(record => record.status).filter(status => status && !clean.includes(status)); if (inUse.length) return error(res, 422, `Não é possível remover status em uso: ${[...new Set(inUse)].join(', ')}.`); await store.setDemandStatuses(clean); await log(user.id, 'alterou status de demandas', 'demandas', null, { statuses: clean }); return respond(res, 200, { statuses: clean });
   }
   if (req.method === 'GET' && pathname === '/api/dashboard') {
