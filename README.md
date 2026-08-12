@@ -26,7 +26,11 @@ Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **
 | TI | ti@centralti.local | 123456 |
 | Recepção | recepcao@centralti.local | 123456 |
 
-Altere essas senhas antes de colocar o sistema em operação. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início. Para uma implantação corporativa, defina a variável de ambiente `DATABASE_URL` com a conexão PostgreSQL antes de iniciar o sistema; ele criará e migrará as tabelas automaticamente. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
+No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 12 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início. Para uma implantação corporativa, defina a variável de ambiente `DATABASE_URL` com a conexão PostgreSQL antes de iniciar o sistema; ele criará e migrará as tabelas automaticamente. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
+
+## Backup
+
+No modo de arquivo local, a Central TI cria um backup diário em `backups/` e mantém os 30 mais recentes. Um administrador também pode gerar um backup imediato na tela **Usuários**. Essa pasta é ignorada pelo Git e não é publicada no GitHub.
 
 ## Validação em duas etapas por e-mail
 

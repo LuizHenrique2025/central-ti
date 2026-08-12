@@ -17,6 +17,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const DB_DIR = path.join(ROOT, 'storage');
 const DB_FILE = path.join(DB_DIR, 'central-ti.json');
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(ROOT, 'backups');
 const DATABASE_URL = process.env.DATABASE_URL;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const sessions = new Map();
@@ -43,7 +44,7 @@ function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
 function passwordHash(password, salt = crypto.randomBytes(16).toString('hex')) { return { salt, hash: crypto.scryptSync(password, salt, 64).toString('hex') }; }
 function verifyPassword(password, user) { const candidate = passwordHash(String(password), user.salt).hash; return crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(user.hash, 'hex')); }
-function userSeed(nome, email, perfil, senha) { const { salt, hash } = passwordHash(senha); return { id: id(), nome, email, perfil, salt, hash, createdAt: now() }; }
+function userSeed(nome, email, perfil, senha) { const { salt, hash } = passwordHash(senha); return { id: id(), nome, email, perfil, salt, hash, mustChangePassword: true, createdAt: now() }; }
 function initialData() {
   const admin = userSeed('Administrador', 'admin@centralti.local', 'admin', '123456');
   const ti = userSeed('Equipe de TI', 'ti@centralti.local', 'ti', '123456');
@@ -53,6 +54,7 @@ function initialData() {
 }
 function normalizeFileDb(data) {
   for (const key of [...Object.keys(resourceDefinitions), 'users', 'messages', 'auditLogs']) data[key] ||= [];
+  for (const user of data.users) if (user.mustChangePassword === undefined) user.mustChangePassword = verifyPassword('123456', user);
   data.demandStatuses ||= ['Aberta', 'Em andamento', 'Concluída'];
   for (const demand of data.demandas) if (!data.demandStatuses.includes(demand.status)) data.demandStatuses.push(demand.status);
   data.computerGroups ||= ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'];
@@ -71,8 +73,18 @@ function normalizeFileDb(data) {
   return data;
 }
 function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const data = normalizeFileDb(JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); writeFileDb(data); return data; }
-function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); }
-function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, createdAt: user.createdAt }; }
+function createFileBackup(force = false) {
+  if (DATABASE_URL || !fs.existsSync(DB_FILE)) return null;
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const today = new Date().toISOString().slice(0, 10); const suffix = force ? `${today}-${new Date().toISOString().slice(11, 19).replaceAll(':', '-')}` : today;
+  const backupPath = path.join(BACKUP_DIR, `central-ti-${suffix}.json`);
+  if (!fs.existsSync(backupPath)) fs.copyFileSync(DB_FILE, backupPath);
+  const oldBackups = fs.readdirSync(BACKUP_DIR).filter(name => /^central-ti-.*\.json$/.test(name)).map(name => ({ name, time: fs.statSync(path.join(BACKUP_DIR, name)).mtimeMs })).sort((a, b) => b.time - a.time).slice(30);
+  for (const backup of oldBackups) fs.unlinkSync(path.join(BACKUP_DIR, backup.name));
+  return backupPath;
+}
+function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); createFileBackup(); }
+function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, mustChangePassword: Boolean(user.mustChangePassword), createdAt: user.createdAt }; }
 function pgRecord(row) { return { id: row.id, ...row.data, createdAt: row.created_at, updatedAt: row.updated_at, createdBy: row.created_by, updatedBy: row.updated_by }; }
 
 const fileStore = {
@@ -80,7 +92,7 @@ const fileStore = {
   async findUserByEmail(email) { return readFileDb().users.find(user => user.email === email); },
   async findUser(idValue) { return readFileDb().users.find(user => user.id === idValue); },
   async createUser(user) { const db = readFileDb(); db.users.push(user); writeFileDb(db); return user; },
-  async updatePassword(userId, password) { const db = readFileDb(); const user = db.users.find(x => x.id === userId); if (!user) return null; Object.assign(user, passwordHash(password), { updatedAt: now() }); writeFileDb(db); return user; },
+  async updatePassword(userId, password) { const db = readFileDb(); const user = db.users.find(x => x.id === userId); if (!user) return null; Object.assign(user, passwordHash(password), { mustChangePassword: false, updatedAt: now() }); writeFileDb(db); return user; },
   async records(resource) { return readFileDb()[resource]; },
   async record(resource, recordId) { return readFileDb()[resource].find(record => record.id === recordId); },
   async createRecord(resource, record) { const db = readFileDb(); db[resource].push(record); writeFileDb(db); return record; },
@@ -91,17 +103,18 @@ const fileStore = {
   async markMessageRead(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && x.recipientId === userId); if (!message) return null; message.readAt = now(); writeFileDb(db); return message; },
   async audit(entry) { const db = readFileDb(); db.auditLogs.push(entry); writeFileDb(db); },
   async audits(resource, recordId) { return readFileDb().auditLogs.filter(log => (!resource || log.resource === resource) && (!recordId || log.recordId === recordId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+  ,async backupNow() { return createFileBackup(true); }
   ,async demandStatuses() { return readFileDb().demandStatuses; }
   ,async setDemandStatuses(statuses) { const db = readFileDb(); db.demandStatuses = statuses; writeFileDb(db); return statuses; }
   ,async computerGroups() { return readFileDb().computerGroups; }
   ,async setComputerGroups(groups) { const db = readFileDb(); db.computerGroups = groups; writeFileDb(db); return groups; }
 };
 const pgStore = {
-  async users() { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users ORDER BY nome')).rows; },
-  async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
-  async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
-  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,salt,hash,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [user.id, user.nome, user.email, user.perfil, user.salt, user.hash, user.createdAt]); return user; },
-  async updatePassword(userId, password) { const values = passwordHash(password); const result = await pool.query('UPDATE users SET salt=$2, hash=$3 WHERE id=$1 RETURNING id,nome,email,perfil,salt,hash,created_at AS "createdAt"', [userId, values.salt, values.hash]); return result.rows[0]; },
+  async users() { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users ORDER BY nome')).rows; },
+  async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
+  async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
+  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,salt,hash,must_change_password,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [user.id, user.nome, user.email, user.perfil, user.salt, user.hash, user.mustChangePassword, user.createdAt]); return user; },
+  async updatePassword(userId, password) { const values = passwordHash(password); const result = await pool.query('UPDATE users SET salt=$2, hash=$3, must_change_password=false WHERE id=$1 RETURNING id,nome,email,perfil,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, values.salt, values.hash]); return result.rows[0]; },
   async records(resource) { return (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 ORDER BY updated_at DESC', [resource])).rows.map(pgRecord); },
   async record(resource, recordId) { const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
   async createRecord(resource, record) { await pool.query('INSERT INTO records (id,resource,data,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [record.id, resource, record, record.createdAt, record.updatedAt, record.createdBy, record.updatedBy]); return record; },
@@ -112,6 +125,7 @@ const pgStore = {
   async markMessageRead(messageId, userId) { return (await pool.query('UPDATE messages SET read_at=NOW() WHERE id=$1 AND recipient_id=$2 RETURNING id', [messageId, userId])).rows[0]; },
   async audit(entry) { await pool.query('INSERT INTO audit_logs (id,user_id,action,resource,record_id,details,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [entry.id, entry.userId, entry.action, entry.resource, entry.recordId, entry.details, entry.createdAt]); },
   async audits(resource, recordId) { const query = `SELECT a.id,a.action,a.resource,a.record_id AS "recordId",a.details,a.created_at AS "createdAt",u.nome AS "userName" FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id WHERE ($1::text IS NULL OR a.resource=$1) AND ($2::uuid IS NULL OR a.record_id=$2) ORDER BY a.created_at DESC LIMIT 100`; return (await pool.query(query, [resource || null, recordId || null])).rows; }
+  ,async backupNow() { return null; }
   ,async demandStatuses() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='demand_statuses'")).rows[0]; return row?.value || ['Aberta', 'Em andamento', 'Concluída']; }
   ,async setDemandStatuses(statuses) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('demand_statuses',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(statuses)]); return statuses; }
   ,async computerGroups() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='computer_groups'")).rows[0]; return row?.value || ['Geral', 'Faturamento', 'Eletivas', 'Laboratório']; }
@@ -120,13 +134,14 @@ const pgStore = {
 let store = fileStore;
 
 async function initializePostgres() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT NOT NULL UNIQUE, perfil TEXT NOT NULL, salt TEXT NOT NULL, hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL);
+  await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT NOT NULL UNIQUE, perfil TEXT NOT NULL, salt TEXT NOT NULL, hash TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL);
     CREATE TABLE IF NOT EXISTS records (id UUID PRIMARY KEY, resource TEXT NOT NULL, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, created_by UUID, updated_by UUID);
     CREATE INDEX IF NOT EXISTS records_resource_updated_idx ON records(resource, updated_at DESC);
     CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY, sender_id UUID NOT NULL, recipient_id UUID NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, read_at TIMESTAMPTZ);
     CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, user_id UUID, action TEXT NOT NULL, resource TEXT, record_id UUID, details JSONB, created_at TIMESTAMPTZ NOT NULL);
     CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL);
     CREATE INDEX IF NOT EXISTS audit_resource_record_idx ON audit_logs(resource, record_id, created_at DESC);`);
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false');
   const count = Number((await pool.query('SELECT COUNT(*)::int AS count FROM users')).rows[0].count);
   if (!count) {
     const data = fs.existsSync(DB_FILE) ? readFileDb() : initialData();
@@ -192,6 +207,15 @@ async function retireAssetPatrimony(resource, asset, userId) {
   const existing = (await store.records('patrimonio')).find(item => item.origem === resource && item.origemId === asset.id);
   if (existing) await store.updateRecord('patrimonio', existing.id, { situacao: 'Baixado' }, userId);
 }
+async function notifyAdmins(senderId, subject, body) {
+  const admins = (await store.users()).filter(person => person.perfil === 'admin' && person.id !== senderId);
+  for (const admin of admins) await store.createMessage({ id: id(), senderId, recipientId: admin.id, subject, body, createdAt: now(), readAt: null, systemAlert: true });
+}
+async function alertAssetCondition(resource, record, userId) {
+  if (!isAsset(resource) || record.avaliacao === 'Bom') return;
+  const assetName = resource === 'computadores' ? `Computador ${record.patrimonio}` : `${record.equipamento} (${record.patrimonio})`;
+  await notifyAdmins(userId, `Alerta técnico: ${assetName}`, `${assetName} está marcado como “${record.avaliacao}”. Responsável: ${record.responsavel}. Verifique o cadastro na Central TI.`);
+}
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
 function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
 function csv(records, keys) { const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`; return `\uFEFF${keys.join(';')}\n${records.map(row => keys.map(key => quote(row[key])).join(';')).join('\n')}`; }
@@ -224,14 +248,18 @@ async function api(req, res, url) {
   if (req.method === 'POST' && pathname === '/api/auth/logout') { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); if (token) sessions.delete(token); return respond(res, 200, { ok: true }); }
   const user = await requireAuth(req, res); if (!user) return;
   if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: localAddresses(), database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
-  if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (typeof newPassword !== 'string' || newPassword.length < 8) return error(res, 422, 'A nova senha deve ter ao menos 8 caracteres.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
+  if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (typeof newPassword !== 'string' || newPassword.length < 12 || !/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) return error(res, 422, 'Use ao menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
+  if (user.mustChangePassword) return error(res, 403, 'Altere sua senha antes de acessar o sistema.');
   if (req.method === 'GET' && pathname === '/api/users') return respond(res, 200, { users: (await store.users()).map(publicUser) });
   if (req.method === 'POST' && pathname === '/api/users') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem criar usuários.'); const body = await requestBody(req); const nome = String(body.nome || '').trim(); const email = String(body.email || '').trim().toLowerCase(); const perfil = String(body.perfil || 'consulta'); const senha = String(body.senha || '');
-    if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'recepcao', 'consulta'].includes(perfil) || senha.length < 8) return error(res, 422, 'Revise os dados: nome, e-mail válido, perfil e senha com no mínimo 8 caracteres.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
-    const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, salt, hash, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil }); return respond(res, 201, { user: publicUser(created) });
+    if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'recepcao', 'consulta'].includes(perfil) || senha.length < 12 || !/[a-z]/.test(senha) || !/[A-Z]/.test(senha) || !/\d/.test(senha) || !/[^A-Za-z0-9]/.test(senha)) return error(res, 422, 'Revise os dados: senha com 12+ caracteres, maiúscula, minúscula, número e símbolo.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
+    const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, salt, hash, mustChangePassword: true, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil }); return respond(res, 201, { user: publicUser(created) });
   }
-  const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 8) return error(res, 422, 'A senha deve ter ao menos 8 caracteres.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
+  const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return error(res, 422, 'Use ao menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
+  if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
+  const historyMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/([\w-]+)\/history$/); if (req.method === 'GET' && historyMatch) { const [, resource, recordId] = historyMatch; if (!resourceDefinitions[resource] || !canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para este histórico.'); return respond(res, 200, { logs: await store.audits(resource, recordId) }); }
+  if (req.method === 'GET' && pathname === '/api/locations/computadores') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); const records = await store.records('computadores'); const groups = await store.computerGroups(); return respond(res, 200, { groups: groups.map(group => ({ group, total: records.filter(record => record.grupo === group).length })), records }); }
   if (req.method === 'GET' && pathname === '/api/demand-statuses') { if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para demandas.'); return respond(res, 200, { statuses: await store.demandStatuses() }); }
   if (req.method === 'GET' && pathname === '/api/computer-groups') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); return respond(res, 200, { groups: await store.computerGroups() }); }
   if (req.method === 'PUT' && pathname === '/api/computer-groups') {
