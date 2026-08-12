@@ -10,7 +10,7 @@ const modules = {
   redes: { name: 'Redes', icon: '⌁', fields: [['nome', 'Nome', 'Nome do ativo'], ['ip', 'IP / Faixa', 'Ex.: 192.168.1.1'], ['localizacao', 'Localização', 'Setor / rack'], ['status', 'Status', 'Online,Offline,Manutenção']] },
   patrimonio: { name: 'Patrimônio', icon: '◇', fields: [['codigo', 'Código', 'Código patrimonial'], ['descricao', 'Descrição', 'Descrição do item'], ['localizacao', 'Localização', 'Setor / sala'], ['situacao', 'Situação', 'Em uso,Disponível,Baixado']] }
 };
-const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], dashboard: null, report: null, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, loading: false };
+const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], dashboard: null, report: null, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, loading: false, formDirty: false };
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 const formatDate = value => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 const role = value => ({ admin: 'Administrador', ti: 'Equipe de TI', recepcao: 'Recepção', consulta: 'Consulta' })[value] || value;
@@ -62,10 +62,11 @@ async function load() { state.loading = true; render(); try { if (state.page ===
 async function go(page) { state.page = page; state.query = ''; state.modal = null; if (page === 'localizacao') { state.loading = true; render(); try { state.locations = await api('/api/locations/computadores'); } catch (error) { toast(error.message); } finally { state.loading = false; render(); } return; } load(); }
 function setSearch(value) { state.query = value; render(); $('.search')?.focus(); }
 function setPeriod(start, end) { state.start = start; state.end = end; load(); }
-async function openRecord(resource, id = '') {
-  if (resource === 'computadores') state.computerGroups = (await api('/api/computer-groups')).groups;
+function openRecord(resource, id = '') {
+  state.formDirty = false;
   state.modal = { type: 'record', resource, record: id ? state.records.find(record => record.id === id) : null };
   render();
+  if (resource === 'computadores') api('/api/computer-groups').then(result => { if (state.modal?.type === 'record' && state.modal.resource === 'computadores' && !state.formDirty) { state.computerGroups = result.groups; render(); } }).catch(error => toast(error.message));
 }
 function openStatusManager() { state.modal = { type: 'statuses' }; render(); }
 async function openGroupManager() { try { state.computerGroups = (await api('/api/computer-groups')).groups; state.modal = { type: 'computer-groups' }; render(); } catch (error) { toast(error.message); } }
@@ -73,18 +74,18 @@ function addStatus() { const row = document.createElement('label'); row.classNam
 function addComputerGroup() { const row = document.createElement('label'); row.className = 'status-editor'; row.innerHTML = '<input name="group" required maxlength="50" placeholder="Novo grupo"/><button type="button" onclick="this.parentElement.remove()">×</button>'; $('#group-fields').append(row); }
 function openUser() { state.modal = { type: 'user' }; render(); }
 async function compose() { if (!state.users.length) state.users = (await api('/api/users')).users; state.modal = { type: 'mail' }; render(); }
-function closeModal() { state.modal = null; render(); }
+function closeModal(force = false) { if (!force && state.formDirty && !confirm('Há dados não salvos. Deseja fechar mesmo assim?')) return; state.modal = null; state.formDirty = false; render(); }
 function closeBack(event) { if (event.target === event.currentTarget) closeModal(); }
-async function saveRecord(event, resource, id) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); if (resource === 'computadores') data.checklist = form.getAll('checklist'); try { await api(`/api/resources/${resource}${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(data) }); closeModal(); await load(); toast('Cadastro salvo.'); } catch (error) { toast(error.message); } }
+async function saveRecord(event, resource, id) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); if (resource === 'computadores') data.checklist = form.getAll('checklist'); try { await api(`/api/resources/${resource}${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(data) }); closeModal(true); await load(); toast('Cadastro salvo.'); } catch (error) { toast(error.message); } }
 async function deleteRecord(resource, id) { if (!confirm('Excluir este registro?')) return; try { await api(`/api/resources/${resource}/${id}`, { method: 'DELETE' }); await load(); toast('Registro excluído.'); } catch (error) { toast(error.message); } }
 function dragDemand(event, id) { event.dataTransfer.setData('demandId', id); }
 async function dropDemand(event, status) { event.preventDefault(); await moveDemand(event.dataTransfer.getData('demandId'), status); }
 async function moveDemand(id, status) { const demand = state.records.find(record => record.id === id); if (!demand || demand.status === status) return; try { await api(`/api/resources/demandas/${id}`, { method: 'PUT', body: JSON.stringify({ ...demand, status }) }); await load(); toast(`Demanda movida para ${status}.`); } catch (error) { toast(error.message); } }
-async function saveStatuses(event) { event.preventDefault(); const statuses = new FormData(event.target).getAll('status').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/demand-statuses', { method: 'PUT', body: JSON.stringify({ statuses }) }); state.statuses = result.statuses; closeModal(); await load(); toast('Status atualizados.'); } catch (error) { toast(error.message); } }
-async function saveComputerGroups(event) { event.preventDefault(); const groups = new FormData(event.target).getAll('group').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/computer-groups', { method: 'PUT', body: JSON.stringify({ groups }) }); state.computerGroups = result.groups; closeModal(); toast('Grupos atualizados.'); } catch (error) { toast(error.message); } }
-async function sendMail(event) { event.preventDefault(); try { await api('/api/messages', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(); await load(); toast('Mensagem enviada.'); } catch (error) { toast(error.message); } }
+async function saveStatuses(event) { event.preventDefault(); const statuses = new FormData(event.target).getAll('status').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/demand-statuses', { method: 'PUT', body: JSON.stringify({ statuses }) }); state.statuses = result.statuses; closeModal(true); await load(); toast('Status atualizados.'); } catch (error) { toast(error.message); } }
+async function saveComputerGroups(event) { event.preventDefault(); const groups = new FormData(event.target).getAll('group').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/computer-groups', { method: 'PUT', body: JSON.stringify({ groups }) }); state.computerGroups = result.groups; closeModal(true); toast('Grupos atualizados.'); } catch (error) { toast(error.message); } }
+async function sendMail(event) { event.preventDefault(); try { await api('/api/messages', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Mensagem enviada.'); } catch (error) { toast(error.message); } }
 async function readMessage(id) { const message = state.messages.find(item => item.id === id); if (message?.recipient.id === state.user.id && !message.readAt) { await api(`/api/messages/${id}/read`, { method: 'PUT' }); load(); } }
-async function saveUser(event) { event.preventDefault(); try { await api('/api/users', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(); await load(); toast('Usuário criado.'); } catch (error) { toast(error.message); } }
+async function saveUser(event) { event.preventDefault(); try { await api('/api/users', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Usuário criado.'); } catch (error) { toast(error.message); } }
 async function changeOwnPassword(event) { event.preventDefault(); try { await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); state.user.mustChangePassword = false; toast('Senha atualizada com sucesso.'); load(); } catch (error) { toast(error.message); } }
 async function createBackup() { try { const result = await api('/api/backups', { method: 'POST' }); toast(result.message || 'Backup criado.'); } catch (error) { toast(error.message); } }
 async function openHistory(resource, id) { try { const result = await api(`/api/resources/${resource}/${id}/history`); const lines = result.logs.map(log => `${formatDate(log.createdAt)} — ${log.userName || 'Usuário'}: ${log.action}`).join('\n'); alert(lines || 'Ainda não há movimentações registradas.'); } catch (error) { toast(error.message); } }
@@ -98,5 +99,7 @@ function cancelCode() { state.pending = null; render(); }
 async function logout() { try { await api('/api/auth/logout', { method: 'POST' }); } catch {} state.token = null; state.user = null; state.pending = null; localStorage.removeItem(TOKEN); render(); }
 function toast(message) { $('.toast')?.remove(); const toastElement = document.createElement('div'); toastElement.className = 'toast'; toastElement.textContent = message; document.body.append(toastElement); setTimeout(() => toastElement.remove(), 3500); }
 async function boot() { if (!state.token) return render(); try { const me = await api('/api/me'); state.user = me.user; state.networkUrls = me.networkUrls || []; load(); } catch { state.token = null; localStorage.removeItem(TOKEN); render(); } }
-setInterval(() => { if (state.token && state.user && !state.modal && !state.loading && state.page !== 'localizacao') load(); }, 15000);
+document.addEventListener('input', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
+document.addEventListener('change', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
+setInterval(() => { if (state.token && state.user && !state.modal && !state.formDirty && !state.loading && state.page !== 'localizacao') load(); }, 15000);
 boot();
