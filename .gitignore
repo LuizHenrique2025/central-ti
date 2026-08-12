@@ -1,0 +1,8 @@
+# Dados operacionais locais (contêm usuários e senhas protegidas por hash)
+storage/*.json
+
+# Arquivos de ambiente e logs
+.env
+*.log
+
+node_modules/

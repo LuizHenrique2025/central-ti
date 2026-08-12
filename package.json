@@ -1,0 +1,17 @@
+{
+  "name": "central-ti",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema interno de gestão de TI",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1"
+  }
+}

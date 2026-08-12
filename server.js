@@ -1,0 +1,291 @@
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const os = require('node:os');
+const net = require('node:net');
+const { Pool } = require('pg');
+const nodemailer = require('nodemailer');
+
+function loadEnvFile() {
+  const envFile = path.join(__dirname, '.env'); if (!fs.existsSync(envFile)) return;
+  for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) { const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/); if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, ''); }
+}
+loadEnvFile();
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '0.0.0.0';
+const ROOT = __dirname;
+const DB_DIR = path.join(ROOT, 'storage');
+const DB_FILE = path.join(DB_DIR, 'central-ti.json');
+const DATABASE_URL = process.env.DATABASE_URL;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const sessions = new Map();
+const verificationChallenges = new Map();
+const loginAttempts = new Map();
+const TWO_FACTOR_REQUIRED = process.env.EMAIL_2FA_REQUIRED === 'true';
+const SMTP_ENABLED = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+const transporter = SMTP_ENABLED ? nodemailer.createTransport({ host: process.env.SMTP_HOST || 'smtp.gmail.com', port: Number(process.env.SMTP_PORT || 465), secure: process.env.SMTP_SECURE !== 'false', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }) : null;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined }) : null;
+
+const resourceDefinitions = {
+  computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
+  materiais: ['item', 'categoria', 'quantidade', 'minimo'],
+  recepcoes: ['visitante', 'empresa', 'destino', 'data'],
+  equipamentos: ['patrimonio', 'equipamento', 'modelo', 'responsavel', 'condicao', 'avaliacao'],
+  redes: ['nome', 'ip', 'localizacao', 'status'],
+  patrimonio: ['codigo', 'descricao', 'localizacao', 'situacao'],
+  demandas: ['titulo', 'solicitante', 'prioridade', 'status']
+};
+const access = { admin: Object.keys(resourceDefinitions), ti: ['computadores', 'materiais', 'equipamentos', 'redes', 'patrimonio', 'demandas'], recepcao: ['recepcoes'], consulta: [] };
+const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
+
+function id() { return crypto.randomUUID(); }
+function now() { return new Date().toISOString(); }
+function passwordHash(password, salt = crypto.randomBytes(16).toString('hex')) { return { salt, hash: crypto.scryptSync(password, salt, 64).toString('hex') }; }
+function verifyPassword(password, user) { const candidate = passwordHash(String(password), user.salt).hash; return crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(user.hash, 'hex')); }
+function userSeed(nome, email, perfil, senha) { const { salt, hash } = passwordHash(senha); return { id: id(), nome, email, perfil, salt, hash, createdAt: now() }; }
+function initialData() {
+  const admin = userSeed('Administrador', 'admin@centralti.local', 'admin', '123456');
+  const ti = userSeed('Equipe de TI', 'ti@centralti.local', 'ti', '123456');
+  const recepcao = userSeed('Recepção', 'recepcao@centralti.local', 'recepcao', '123456');
+  const record = (data) => ({ id: id(), ...data, createdAt: now(), updatedAt: now() });
+  return { users: [admin, ti, recepcao], computadores: [record({ patrimonio: 'PC-0048', responsavel: 'Mariana Costa', localizacao: 'Financeiro', status: 'Ativo', avaliacao: 'Bom' }), record({ patrimonio: 'PC-0051', responsavel: 'João Victor', localizacao: 'Recepção', status: 'Em manutenção', avaliacao: 'Precisa de manutenção' })], materiais: [record({ item: 'Toner HP 85A', categoria: 'Impressão', quantidade: '8', minimo: '4' }), record({ item: 'Cabo de rede CAT6', categoria: 'Rede', quantidade: '42', minimo: '20' })], recepcoes: [record({ visitante: 'Carlos Mendes', empresa: 'Mendes & Filhos', destino: 'Compras', data: '11/08/2026' })], equipamentos: [record({ equipamento: 'Projetor', modelo: 'Epson PowerLite X49', responsavel: 'Sala de reuniões', condicao: 'Operacional', avaliacao: 'Bom' })], redes: [record({ nome: 'Firewall principal', ip: '192.168.1.1', localizacao: 'Rack TI', status: 'Online' })], patrimonio: [record({ codigo: 'PAT-1022', descricao: 'Mesa de escritório', localizacao: 'Financeiro', situacao: 'Em uso' })], demandas: [record({ titulo: 'Instalar impressora no RH', solicitante: 'Sandra Lima', prioridade: 'Média', status: 'Em andamento' }), record({ titulo: 'Acesso ao sistema financeiro', solicitante: 'Felipe Rocha', prioridade: 'Alta', status: 'Aberta' })], demandStatuses: ['Aberta', 'Em andamento', 'Concluída'], messages: [record({ senderId: ti.id, recipientId: admin.id, subject: 'Bem-vindo à Central TI', body: 'Seu acesso ao painel foi configurado com sucesso.', readAt: null })], auditLogs: [] };
+}
+function normalizeFileDb(data) {
+  for (const key of [...Object.keys(resourceDefinitions), 'users', 'messages', 'auditLogs']) data[key] ||= [];
+  data.demandStatuses ||= ['Aberta', 'Em andamento', 'Concluída'];
+  for (const demand of data.demandas) if (!data.demandStatuses.includes(demand.status)) data.demandStatuses.push(demand.status);
+  data.computerGroups ||= ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'];
+  for (const resource of ['computadores', 'equipamentos']) for (const record of data[resource]) {
+    if (!record.avaliacao) record.avaliacao = /manuten/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : 'Bom';
+  }
+  for (const record of data.equipamentos) record.patrimonio ||= 'Não informado';
+  for (const record of data.computadores) {
+    record.ip ||= 'Não informado';
+    record.grupo ||= 'Geral';
+    record.dataSolicitacao ||= '';
+    record.dataRetirada ||= '';
+    record.dataDevolucao ||= '';
+    if (!data.computerGroups.includes(record.grupo)) data.computerGroups.push(record.grupo);
+  }
+  return data;
+}
+function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const data = normalizeFileDb(JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); writeFileDb(data); return data; }
+function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); }
+function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, createdAt: user.createdAt }; }
+function pgRecord(row) { return { id: row.id, ...row.data, createdAt: row.created_at, updatedAt: row.updated_at, createdBy: row.created_by, updatedBy: row.updated_by }; }
+
+const fileStore = {
+  async users() { return readFileDb().users; },
+  async findUserByEmail(email) { return readFileDb().users.find(user => user.email === email); },
+  async findUser(idValue) { return readFileDb().users.find(user => user.id === idValue); },
+  async createUser(user) { const db = readFileDb(); db.users.push(user); writeFileDb(db); return user; },
+  async updatePassword(userId, password) { const db = readFileDb(); const user = db.users.find(x => x.id === userId); if (!user) return null; Object.assign(user, passwordHash(password), { updatedAt: now() }); writeFileDb(db); return user; },
+  async records(resource) { return readFileDb()[resource]; },
+  async record(resource, recordId) { return readFileDb()[resource].find(record => record.id === recordId); },
+  async createRecord(resource, record) { const db = readFileDb(); db[resource].push(record); writeFileDb(db); return record; },
+  async updateRecord(resource, recordId, fields, userId) { const db = readFileDb(); const record = db[resource].find(item => item.id === recordId); if (!record) return null; Object.assign(record, fields, { updatedAt: now(), updatedBy: userId }); writeFileDb(db); return record; },
+  async deleteRecord(resource, recordId) { const db = readFileDb(); const index = db[resource].findIndex(item => item.id === recordId); if (index < 0) return null; const [removed] = db[resource].splice(index, 1); writeFileDb(db); return removed; },
+  async messagesFor(userId) { return readFileDb().messages.filter(message => message.recipientId === userId || message.senderId === userId); },
+  async createMessage(message) { const db = readFileDb(); db.messages.push(message); writeFileDb(db); return message; },
+  async markMessageRead(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && x.recipientId === userId); if (!message) return null; message.readAt = now(); writeFileDb(db); return message; },
+  async audit(entry) { const db = readFileDb(); db.auditLogs.push(entry); writeFileDb(db); },
+  async audits(resource, recordId) { return readFileDb().auditLogs.filter(log => (!resource || log.resource === resource) && (!recordId || log.recordId === recordId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+  ,async demandStatuses() { return readFileDb().demandStatuses; }
+  ,async setDemandStatuses(statuses) { const db = readFileDb(); db.demandStatuses = statuses; writeFileDb(db); return statuses; }
+  ,async computerGroups() { return readFileDb().computerGroups; }
+  ,async setComputerGroups(groups) { const db = readFileDb(); db.computerGroups = groups; writeFileDb(db); return groups; }
+};
+const pgStore = {
+  async users() { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users ORDER BY nome')).rows; },
+  async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
+  async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
+  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,salt,hash,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [user.id, user.nome, user.email, user.perfil, user.salt, user.hash, user.createdAt]); return user; },
+  async updatePassword(userId, password) { const values = passwordHash(password); const result = await pool.query('UPDATE users SET salt=$2, hash=$3 WHERE id=$1 RETURNING id,nome,email,perfil,salt,hash,created_at AS "createdAt"', [userId, values.salt, values.hash]); return result.rows[0]; },
+  async records(resource) { return (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 ORDER BY updated_at DESC', [resource])).rows.map(pgRecord); },
+  async record(resource, recordId) { const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
+  async createRecord(resource, record) { await pool.query('INSERT INTO records (id,resource,data,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [record.id, resource, record, record.createdAt, record.updatedAt, record.createdBy, record.updatedBy]); return record; },
+  async updateRecord(resource, recordId, fields, userId) { const previous = await this.record(resource, recordId); if (!previous) return null; const updated = { ...previous, ...fields, updatedAt: now(), updatedBy: userId }; await pool.query('UPDATE records SET data=$3,updated_at=$4,updated_by=$5 WHERE resource=$1 AND id=$2', [resource, recordId, updated, updated.updatedAt, userId]); return updated; },
+  async deleteRecord(resource, recordId) { const previous = await this.record(resource, recordId); if (!previous) return null; await pool.query('DELETE FROM records WHERE resource=$1 AND id=$2', [resource, recordId]); return previous; },
+  async messagesFor(userId) { return (await pool.query('SELECT id,sender_id AS "senderId",recipient_id AS "recipientId",subject,body,created_at AS "createdAt",read_at AS "readAt" FROM messages WHERE recipient_id=$1 OR sender_id=$1 ORDER BY created_at DESC', [userId])).rows; },
+  async createMessage(message) { await pool.query('INSERT INTO messages (id,sender_id,recipient_id,subject,body,created_at,read_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [message.id, message.senderId, message.recipientId, message.subject, message.body, message.createdAt, message.readAt]); return message; },
+  async markMessageRead(messageId, userId) { return (await pool.query('UPDATE messages SET read_at=NOW() WHERE id=$1 AND recipient_id=$2 RETURNING id', [messageId, userId])).rows[0]; },
+  async audit(entry) { await pool.query('INSERT INTO audit_logs (id,user_id,action,resource,record_id,details,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [entry.id, entry.userId, entry.action, entry.resource, entry.recordId, entry.details, entry.createdAt]); },
+  async audits(resource, recordId) { const query = `SELECT a.id,a.action,a.resource,a.record_id AS "recordId",a.details,a.created_at AS "createdAt",u.nome AS "userName" FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id WHERE ($1::text IS NULL OR a.resource=$1) AND ($2::uuid IS NULL OR a.record_id=$2) ORDER BY a.created_at DESC LIMIT 100`; return (await pool.query(query, [resource || null, recordId || null])).rows; }
+  ,async demandStatuses() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='demand_statuses'")).rows[0]; return row?.value || ['Aberta', 'Em andamento', 'Concluída']; }
+  ,async setDemandStatuses(statuses) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('demand_statuses',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(statuses)]); return statuses; }
+  ,async computerGroups() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='computer_groups'")).rows[0]; return row?.value || ['Geral', 'Faturamento', 'Eletivas', 'Laboratório']; }
+  ,async setComputerGroups(groups) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(groups)]); return groups; }
+};
+let store = fileStore;
+
+async function initializePostgres() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT NOT NULL UNIQUE, perfil TEXT NOT NULL, salt TEXT NOT NULL, hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS records (id UUID PRIMARY KEY, resource TEXT NOT NULL, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, created_by UUID, updated_by UUID);
+    CREATE INDEX IF NOT EXISTS records_resource_updated_idx ON records(resource, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY, sender_id UUID NOT NULL, recipient_id UUID NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, read_at TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, user_id UUID, action TEXT NOT NULL, resource TEXT, record_id UUID, details JSONB, created_at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL);
+    CREATE INDEX IF NOT EXISTS audit_resource_record_idx ON audit_logs(resource, record_id, created_at DESC);`);
+  const count = Number((await pool.query('SELECT COUNT(*)::int AS count FROM users')).rows[0].count);
+  if (!count) {
+    const data = fs.existsSync(DB_FILE) ? readFileDb() : initialData();
+    for (const user of data.users) await pgStore.createUser(user);
+    for (const resource of Object.keys(resourceDefinitions)) for (const record of data[resource] || []) await pgStore.createRecord(resource, { ...record, updatedAt: record.updatedAt || record.createdAt, createdBy: record.createdBy || null, updatedBy: record.updatedBy || null });
+    for (const message of data.messages || []) await pgStore.createMessage(message);
+    for (const log of data.auditLogs || []) await pgStore.audit(log);
+    await pgStore.setDemandStatuses(data.demandStatuses || ['Aberta', 'Em andamento', 'Concluída']);
+    console.log('Dados iniciais migrados para PostgreSQL.');
+  }
+  store = pgStore;
+}
+function respond(res, status, data, headers = {}) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', ...headers }); res.end(JSON.stringify(data)); }
+function error(res, status, message) { respond(res, status, { error: message }); }
+function requestBody(req) { return new Promise((resolve, reject) => { let body = ''; req.on('data', chunk => { body += chunk; if (body.length > 1_000_000) { reject(new Error('Payload muito grande')); req.destroy(); } }); req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('JSON inválido')); } }); req.on('error', reject); }); }
+function clientIp(req) { return req.socket.remoteAddress || 'unknown'; }
+function tooManyAttempts(req) { const attempt = loginAttempts.get(clientIp(req)); return attempt && attempt.count >= 8 && Date.now() - attempt.last < 15 * 60 * 1000; }
+function recordAttempt(req, success) { const ip = clientIp(req); if (success) return loginAttempts.delete(ip); const current = loginAttempts.get(ip) || { count: 0, last: 0 }; loginAttempts.set(ip, { count: current.count + 1, last: Date.now() }); }
+async function getAuth(req) { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); const session = token && sessions.get(token); if (!session || session.expiresAt < Date.now()) { if (token) sessions.delete(token); return null; } return store.findUser(session.userId); }
+function canAccess(user, resource, mode = 'read') { if (user.perfil === 'admin') return true; if (mode === 'read' && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
+async function requireAuth(req, res) { const user = await getAuth(req); if (!user) { error(res, 401, 'Sua sessão expirou. Entre novamente.'); return null; } return user; }
+function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? String(values[key]).trim() : ''; if (!value || value.length > 250) return null; item[key] = value; } return item; }
+function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
+function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
+function validateRecordCharacters(resource, payload) {
+  for (const value of Object.values(payload)) if (typeof value === 'string' && /[\u0000-\u001F\u007F<>]/.test(value)) return 'Não use caracteres de controle ou os símbolos < e > nos campos.';
+  if (isAsset(resource)) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{1,49}$/.test(payload.patrimonio)) return 'O patrimônio deve ter de 2 a 50 caracteres: letras, números, ponto, hífen, sublinhado ou barra.';
+    if (resource === 'computadores' && !net.isIP(payload.ip)) return 'Informe um endereço IP válido, por exemplo: 192.168.1.25.';
+  }
+  if (resource === 'computadores' && !/^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(payload.grupo)) return 'O grupo possui caracteres inválidos.';
+  if (resource === 'computadores') {
+    const dates = [payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
+    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
+    if (payload.dataSolicitacao && payload.dataRetirada && payload.dataSolicitacao > payload.dataRetirada) return 'A retirada não pode ser anterior à solicitação.';
+    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
+  }
+  return null;
+}
+function isAsset(resource) { return resource === 'computadores' || resource === 'equipamentos'; }
+function assetSituation(resource, record) {
+  const current = String(resource === 'computadores' ? record.status : record.condicao).toLowerCase();
+  if (current.includes('dispon')) return 'Disponível';
+  if (current.includes('manuten')) return 'Em manutenção';
+  if (current.includes('indispon')) return 'Indisponível';
+  return 'Em uso';
+}
+function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.modelo}`; }
+async function ensurePatrimonyCodeAvailable(resource, record, recordId = null) {
+  if (!isAsset(resource) || !record.patrimonio || record.patrimonio === 'Não informado') return 'Informe um código patrimonial válido.';
+  const existing = (await store.records('patrimonio')).find(item => item.codigo.toLowerCase() === record.patrimonio.toLowerCase() && !(item.origem === resource && item.origemId === recordId));
+  return existing ? `O patrimônio ${record.patrimonio} já está vinculado a outro item.` : null;
+}
+async function syncAssetPatrimony(resource, asset, userId) {
+  if (!isAsset(resource)) return;
+  const fields = { codigo: asset.patrimonio, descricao: assetDescription(resource, asset), localizacao: asset.localizacao || asset.responsavel, situacao: assetSituation(resource, asset), origem: resource, origemId: asset.id };
+  const existing = (await store.records('patrimonio')).find(item => item.origem === resource && item.origemId === asset.id);
+  if (existing) await store.updateRecord('patrimonio', existing.id, fields, userId);
+  else await store.createRecord('patrimonio', { id: id(), ...fields, createdAt: now(), updatedAt: now(), createdBy: userId, updatedBy: userId });
+}
+async function retireAssetPatrimony(resource, asset, userId) {
+  if (!isAsset(resource)) return;
+  const existing = (await store.records('patrimonio')).find(item => item.origem === resource && item.origemId === asset.id);
+  if (existing) await store.updateRecord('patrimonio', existing.id, { situacao: 'Baixado' }, userId);
+}
+async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
+function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
+function csv(records, keys) { const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`; return `\uFEFF${keys.join(';')}\n${records.map(row => keys.map(key => quote(row[key])).join(';')).join('\n')}`; }
+async function sendVerificationCode(user, code) {
+  if (!transporter) throw new Error('Validação por e-mail não está configurada no servidor.');
+  await transporter.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to: user.email, subject: 'Código de acesso · Central TI', text: `Seu código de acesso à Central TI é ${code}. Ele expira em 10 minutos. Se você não tentou entrar, ignore esta mensagem.`, html: `<div style="font-family:Arial,sans-serif;color:#14202d"><h2>Central TI</h2><p>Use este código para concluir seu acesso:</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>O código expira em 10 minutos. Se você não tentou entrar, ignore esta mensagem.</p></div>` });
+}
+
+async function api(req, res, url) {
+  const { pathname } = url;
+  if (req.method === 'GET' && pathname === '/api/health') return respond(res, 200, { ok: true, database: DATABASE_URL ? 'postgresql' : 'arquivo-local', networkUrls: localAddresses() });
+  if (req.method === 'POST' && pathname === '/api/auth/login') {
+    if (tooManyAttempts(req)) return error(res, 429, 'Muitas tentativas. Tente novamente em 15 minutos.');
+    const { email = '', password = '' } = await requestBody(req); const user = await store.findUserByEmail(String(email).trim().toLowerCase());
+    if (!user || !verifyPassword(password, user)) { recordAttempt(req, false); return error(res, 401, 'E-mail ou senha inválidos.'); }
+    recordAttempt(req, true);
+    if (TWO_FACTOR_REQUIRED) {
+      if (!transporter) return error(res, 503, 'A validação por e-mail está ativa, mas o envio SMTP não foi configurado.');
+      const verificationToken = crypto.randomBytes(32).toString('hex'); const code = String(crypto.randomInt(100000, 1000000)); verificationChallenges.set(verificationToken, { userId: user.id, codeHash: crypto.createHash('sha256').update(code).digest('hex'), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
+      try { await sendVerificationCode(user, code); } catch (exception) { verificationChallenges.delete(verificationToken); console.error('Erro ao enviar código de verificação:', exception.message); return error(res, 503, 'Não foi possível enviar o código para o e-mail cadastrado.'); }
+      return respond(res, 200, { requiresVerification: true, verificationToken, email: user.email.replace(/^(.{1,2}).*(@.*)$/, '$1***$2'), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() });
+    }
+    const token = crypto.randomBytes(32).toString('hex'); sessions.set(token, { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS }); await log(user.id, 'login'); return respond(res, 200, { token, user: publicUser(user), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+  }
+  if (req.method === 'POST' && pathname === '/api/auth/verify-email') {
+    const { verificationToken, code } = await requestBody(req); const challenge = verificationChallenges.get(verificationToken); if (!challenge || challenge.expiresAt < Date.now() || challenge.attempts >= 5) { if (verificationToken) verificationChallenges.delete(verificationToken); return error(res, 401, 'O código expirou. Entre novamente para solicitar outro.'); }
+    const receivedHash = crypto.createHash('sha256').update(String(code || '')).digest('hex'); if (!crypto.timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(challenge.codeHash, 'hex'))) { challenge.attempts += 1; return error(res, 401, 'Código inválido.'); }
+    verificationChallenges.delete(verificationToken); const verifiedUser = await store.findUser(challenge.userId); if (!verifiedUser) return error(res, 401, 'Usuário não encontrado.'); const token = crypto.randomBytes(32).toString('hex'); sessions.set(token, { userId: verifiedUser.id, expiresAt: Date.now() + SESSION_TTL_MS }); await log(verifiedUser.id, 'login com validação de e-mail'); return respond(res, 200, { token, user: publicUser(verifiedUser), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+  }
+  if (req.method === 'POST' && pathname === '/api/auth/logout') { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); if (token) sessions.delete(token); return respond(res, 200, { ok: true }); }
+  const user = await requireAuth(req, res); if (!user) return;
+  if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: localAddresses(), database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
+  if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (typeof newPassword !== 'string' || newPassword.length < 8) return error(res, 422, 'A nova senha deve ter ao menos 8 caracteres.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
+  if (req.method === 'GET' && pathname === '/api/users') return respond(res, 200, { users: (await store.users()).map(publicUser) });
+  if (req.method === 'POST' && pathname === '/api/users') {
+    if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem criar usuários.'); const body = await requestBody(req); const nome = String(body.nome || '').trim(); const email = String(body.email || '').trim().toLowerCase(); const perfil = String(body.perfil || 'consulta'); const senha = String(body.senha || '');
+    if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'recepcao', 'consulta'].includes(perfil) || senha.length < 8) return error(res, 422, 'Revise os dados: nome, e-mail válido, perfil e senha com no mínimo 8 caracteres.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
+    const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, salt, hash, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil }); return respond(res, 201, { user: publicUser(created) });
+  }
+  const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 8) return error(res, 422, 'A senha deve ter ao menos 8 caracteres.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
+  if (req.method === 'GET' && pathname === '/api/demand-statuses') { if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para demandas.'); return respond(res, 200, { statuses: await store.demandStatuses() }); }
+  if (req.method === 'GET' && pathname === '/api/computer-groups') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); return respond(res, 200, { groups: await store.computerGroups() }); }
+  if (req.method === 'PUT' && pathname === '/api/computer-groups') {
+    if (!canAccess(user, 'computadores', 'write')) return error(res, 403, 'Você não tem permissão para alterar os grupos.');
+    const { groups } = await requestBody(req); const clean = Array.isArray(groups) ? [...new Set(groups.map(group => String(group).trim()).filter(group => group.length >= 2 && group.length <= 50 && /^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(group)))] : [];
+    if (!clean.length || clean.length > 30) return error(res, 422, 'Informe de 1 a 30 grupos, com 2 a 50 caracteres cada.');
+    const inUse = (await store.records('computadores')).map(record => record.grupo).filter(group => group && !clean.includes(group));
+    if (inUse.length) return error(res, 422, `Não é possível remover grupos em uso: ${[...new Set(inUse)].join(', ')}.`);
+    await store.setComputerGroups(clean); await log(user.id, 'alterou grupos de computadores', 'computadores', null, { groups: clean }); return respond(res, 200, { groups: clean });
+  }
+  if (req.method === 'PUT' && pathname === '/api/demand-statuses') {
+    if (!canAccess(user, 'demandas', 'write')) return error(res, 403, 'Você não tem permissão para alterar os status.'); const { statuses } = await requestBody(req); const clean = Array.isArray(statuses) ? [...new Set(statuses.map(status => String(status).trim()).filter(status => status.length >= 2 && status.length <= 50))] : [];
+    if (!clean.length || clean.length > 12) return error(res, 422, 'Informe de 1 a 12 status, com 2 a 50 caracteres cada.'); const inUse = (await store.records('demandas')).map(record => record.status).filter(status => status && !clean.includes(status)); if (inUse.length) return error(res, 422, `Não é possível remover status em uso: ${[...new Set(inUse)].join(', ')}.`); await store.setDemandStatuses(clean); await log(user.id, 'alterou status de demandas', 'demandas', null, { statuses: clean }); return respond(res, 200, { statuses: clean });
+  }
+  if (req.method === 'GET' && pathname === '/api/dashboard') {
+    const counts = {}; for (const resource of Object.keys(resourceDefinitions)) if (canAccess(user, resource)) counts[resource] = (await store.records(resource)).length;
+    const demands = canAccess(user, 'demandas') ? (await store.records('demandas')).filter(d => d.status !== 'Concluída') : []; const maintenance = (await Promise.all(['computadores', 'equipamentos', 'redes'].filter(resource => canAccess(user, resource)).map(resource => store.records(resource)))).flat().filter(item => /manutenção/i.test(item.status || item.condicao || '')).length; const inbox = (await store.messagesFor(user.id)).filter(message => message.recipientId === user.id && !message.readAt).length;
+    const notifications = (await Promise.all(['computadores', 'equipamentos'].filter(resource => canAccess(user, resource)).map(async resource => (await store.records(resource)).map(record => ({ resource, record }))))).flat().map(({ resource, record }) => {
+      const automatic = !record.avaliacao && /manutenção/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : null;
+      const avaliacao = record.avaliacao || automatic || 'Bom';
+      if (avaliacao === 'Bom') return null;
+      return { id: record.id, resource, avaliacao, titulo: resource === 'computadores' ? `Computador ${record.patrimonio}` : record.equipamento, detalhe: resource === 'computadores' ? `${record.responsavel} · ${record.localizacao}` : `${record.modelo} · ${record.responsavel}` };
+    }).filter(Boolean).sort((a, b) => ({ 'Troca necessária': 0, 'Precisa de manutenção': 1, Ruim: 2 }[a.avaliacao] ?? 3) - ({ 'Troca necessária': 0, 'Precisa de manutenção': 1, Ruim: 2 }[b.avaliacao] ?? 3));
+    return respond(res, 200, { activeCount: Object.values(counts).reduce((a, b) => a + b, 0), openDemands: demands.length, maintenance, inbox, notifications, demands: demands.slice(0, 4), syncedAt: now() });
+  }
+  if (req.method === 'GET' && pathname === '/api/messages') { const people = new Map((await store.users()).map(person => [person.id, person])); const messages = (await store.messagesFor(user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(message => ({ ...message, sender: publicUser(people.get(message.senderId)), recipient: publicUser(people.get(message.recipientId)) })); return respond(res, 200, { messages }); }
+  if (req.method === 'POST' && pathname === '/api/messages') { const { recipientId, subject, body } = await requestBody(req); if (!await store.findUser(recipientId) || !String(subject || '').trim() || String(subject).length > 160 || !String(body || '').trim() || String(body).length > 5000) return error(res, 422, 'Informe destinatário, assunto e mensagem.'); const message = { id: id(), senderId: user.id, recipientId, subject: String(subject).trim(), body: String(body).trim(), createdAt: now(), readAt: null }; await store.createMessage(message); await log(user.id, 'enviou mensagem', 'messages', message.id, { recipientId, subject: message.subject }); return respond(res, 201, { message }); }
+  const readMatch = pathname.match(/^\/api\/messages\/([\w-]+)\/read$/); if (req.method === 'PUT' && readMatch) { const updated = await store.markMessageRead(readMatch[1], user.id); if (!updated) return error(res, 404, 'Mensagem não encontrada.'); return respond(res, 200, { ok: true }); }
+  if (req.method === 'GET' && pathname === '/api/audit') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem consultar a auditoria.'); return respond(res, 200, { logs: await store.audits(url.searchParams.get('resource'), url.searchParams.get('recordId')) }); }
+  if (req.method === 'GET' && pathname === '/api/reports') {
+    const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
+    const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => [resource, (await store.records(resource)).filter(inPeriod)])));
+    const modules = visible.map(resource => ({ resource, total: data[resource].length }));
+    const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao })));
+    const demands = data.demandas || []; const demandStatus = ['Aberta', 'Em andamento', 'Concluída'].map(status => ({ status, total: demands.filter(record => record.status === status).length })); const lowStock = (data.materiais || []).filter(record => Number(record.quantidade) <= Number(record.minimo)).map(record => ({ item: record.item, quantidade: record.quantidade, minimo: record.minimo }));
+    return respond(res, 200, { generatedAt: now(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, lowStock });
+  }
+  if (req.method === 'GET' && pathname === '/api/reports/export') {
+    const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`); const rows = [['Relatório Central TI'], ['Período', start || 'Início', end || 'Hoje'], [], ['Módulo', 'Total']];
+    for (const resource of Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource))) rows.push([resource, (await store.records(resource)).filter(inPeriod).length]);
+    rows.push([], ['Alertas técnicos', 'Avaliação']); for (const resource of ['computadores', 'equipamentos'].filter(resource => canAccess(user, resource))) for (const record of (await store.records(resource)).filter(inPeriod).filter(record => record.avaliacao && record.avaliacao !== 'Bom')) rows.push([resource === 'computadores' ? record.patrimonio : record.equipamento, record.avaliacao]);
+    const content = `\uFEFF${rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n')}`; res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="relatorio-central-ti.csv"', 'cache-control': 'no-store' }); return res.end(content);
+  }
+  const exportMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/export$/); if (req.method === 'GET' && exportMatch) { const resource = exportMatch[1]; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); if (!canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para esta área.'); const keys = resource === 'computadores' ? [...resourceDefinitions[resource], 'dataSolicitacao', 'dataRetirada', 'dataDevolucao', 'checklist'] : resourceDefinitions[resource]; const content = csv(await store.records(resource), keys); res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="central-ti-${resource}.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(content); }
+  const match = pathname.match(/^\/api\/resources\/([a-z]+)(?:\/([\w-]+))?$/); if (match) {
+    const [, resource, recordId] = match; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); const isWrite = req.method !== 'GET'; if (!canAccess(user, resource, isWrite ? 'write' : 'read')) return error(res, 403, 'Você não tem permissão para esta área.');
+    if (req.method === 'GET') return respond(res, 200, { records: await store.records(resource) });
+    if (req.method === 'POST' && !recordId) { const body = await requestBody(req); const payload = sanitize(body, resourceDefinitions[resource]); if (!payload) return error(res, 422, 'Preencha todos os campos corretamente.'); if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); } const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError); const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id }; await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record }); }
+    if (req.method === 'PUT' && recordId) { const body = await requestBody(req); const payload = sanitize(body, resourceDefinitions[resource]); if (!payload) return error(res, 422, 'Preencha todos os campos corretamente.'); if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); } const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError); const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError); const previous = await store.record(resource, recordId); const record = await store.updateRecord(resource, recordId, payload, user.id); if (!record) return error(res, 404, 'Registro não encontrado.'); await syncAssetPatrimony(resource, record, user.id); await log(user.id, 'editou registro', resource, record.id, { before: previous, after: payload }); return respond(res, 200, { record }); }
+    if (req.method === 'DELETE' && recordId) { const removed = await store.deleteRecord(resource, recordId); if (!removed) return error(res, 404, 'Registro não encontrado.'); await retireAssetPatrimony(resource, removed, user.id); await log(user.id, 'excluiu registro', resource, recordId, { values: removed }); return respond(res, 200, { ok: true }); }
+  }
+  return error(res, 404, 'Rota não encontrada.');
+}
+function serveFile(req, res, url) { const requestPath = url.pathname === '/' ? '/index.html' : url.pathname; const publicFiles = new Set(['/index.html', '/app.js', '/styles.css']); if (!publicFiles.has(requestPath)) { res.writeHead(404); return res.end('Página não encontrada'); } const filePath = path.join(ROOT, requestPath.slice(1)); const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' }; res.writeHead(200, { 'content-type': types[path.extname(filePath)] || 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' }); fs.createReadStream(filePath).pipe(res); }
+const server = http.createServer(async (req, res) => { const url = new URL(req.url, `http://${req.headers.host}`); try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); } });
+async function start() { if (pool) await initializePostgres(); server.listen(PORT, HOST, () => { console.log(`Central TI disponível em http://localhost:${PORT}`); for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`); console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`); }); }
+start().catch(error => { console.error('Não foi possível iniciar a Central TI:', error); process.exit(1); });
