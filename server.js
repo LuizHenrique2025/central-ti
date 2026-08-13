@@ -32,7 +32,7 @@ const resourceDefinitions = {
   computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
   materiais: ['item', 'categoria', 'quantidade', 'minimo'],
   programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'status'],
-  equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'condicao', 'avaliacao'],
+  equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'localizacao', 'condicao', 'avaliacao'],
   ramais: ['ramal', 'setor', 'responsavel', 'email', 'status', 'funcionamento'],
   redes: ['nome', 'senha', 'localizacao', 'status'],
   patrimonio: ['codigo', 'produto', 'descricao', 'localizacao', 'situacao'],
@@ -40,7 +40,7 @@ const resourceDefinitions = {
 };
 const optionalResourceFields = {
   computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
-  equipamentos: ['dataRetirada', 'dataDevolucao'],
+  equipamentos: ['numeroSerie', 'dataRetirada', 'dataDevolucao'],
   demandas: ['categoria', 'tecnicoResponsavel', 'prazoSla']
 };
 const access = { admin: Object.keys(resourceDefinitions), ti: Object.keys(resourceDefinitions), consulta: [] };
@@ -82,7 +82,7 @@ function normalizeFileDb(data) {
   for (const resource of ['computadores', 'equipamentos']) for (const record of data[resource]) {
     if (!record.avaliacao) record.avaliacao = /manuten/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : 'Bom';
   }
-  for (const record of data.equipamentos) { record.patrimonio ||= 'Não informado'; record.categoriaEquipamento ||= 'Periférico'; record.ip ||= '0.0.0.0'; record.dataRetirada ||= ''; record.dataDevolucao ||= ''; }
+  for (const record of data.equipamentos) { record.patrimonio ||= 'Não informado'; record.categoriaEquipamento ||= 'Periférico'; record.ip ||= '0.0.0.0'; record.localizacao ||= record.responsavel || 'Não informado'; record.numeroSerie ||= ''; record.dataRetirada ||= ''; record.dataDevolucao ||= ''; }
   for (const record of data.patrimonio) record.produto ||= record.descricao || 'Item patrimonial';
   for (const record of data.computadores) {
     record.ip ||= 'Não informado';
@@ -91,6 +91,16 @@ function normalizeFileDb(data) {
     record.dataRetirada ||= '';
     record.dataDevolucao ||= '';
     if (!data.computerGroups.includes(record.grupo)) data.computerGroups.push(record.grupo);
+  }
+  if (!data.equipmentUnifiedAt) {
+    const computerIds = new Set(data.computadores.map(record => record.id));
+    for (const computer of data.computadores) {
+      if (data.equipamentos.some(item => item.id === computer.id)) continue;
+      data.equipamentos.push({ ...computer, equipamento: 'Computador', categoriaEquipamento: 'Computador', numeroSerie: computer.numeroSerie || '', condicao: computer.status === 'Ativo' ? 'Em uso' : computer.status || 'Em uso', localizacao: computer.localizacao || 'Não informado', dataRetirada: computer.dataRetirada || '', dataDevolucao: computer.dataDevolucao || '' });
+    }
+    for (const patrimony of data.patrimonio || []) if (patrimony.origem === 'computadores' && computerIds.has(patrimony.origemId)) patrimony.origem = 'equipamentos';
+    data.computadores = [];
+    data.equipmentUnifiedAt = now();
   }
   return data;
 }
@@ -114,6 +124,7 @@ const fileStore = {
   async findUserByEmail(email) { return readFileDb().users.find(user => user.email === email); },
   async findUser(idValue) { return readFileDb().users.find(user => user.id === idValue); },
   async createUser(user) { const db = readFileDb(); db.users.push(user); writeFileDb(db); return user; },
+  async renameUser(userId, nome) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.nome = nome; target.updatedAt = now(); writeFileDb(db); return target; },
   async setUserActive(userId, active) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.active = active; target.updatedAt = now(); writeFileDb(db); return target; },
   async setUserPermissions(userId, permissions) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.permissions = permissions; target.updatedAt = now(); writeFileDb(db); return target; },
   async updatePassword(userId, password) { const db = readFileDb(); const user = db.users.find(x => x.id === userId); if (!user) return null; Object.assign(user, passwordHash(password), { mustChangePassword: false, updatedAt: now() }); writeFileDb(db); return user; },
@@ -138,6 +149,7 @@ const pgStore = {
   async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, active, permissions, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
   async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, active, permissions, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
   async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,active,permissions,salt,hash,must_change_password,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [user.id, user.nome, user.email, user.perfil, user.active !== false, JSON.stringify(user.permissions || {}), user.salt, user.hash, user.mustChangePassword, user.createdAt]); return user; },
+  async renameUser(userId, nome) { const result = await pool.query('UPDATE users SET nome=$2 WHERE id=$1 RETURNING id,nome,email,perfil,active,permissions,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, nome]); return result.rows[0]; },
   async setUserActive(userId, active) { const result = await pool.query('UPDATE users SET active=$2 WHERE id=$1 RETURNING id,nome,email,perfil,active,permissions,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, active]); return result.rows[0]; },
   async setUserPermissions(userId, permissions) { const result = await pool.query('UPDATE users SET permissions=$2 WHERE id=$1 RETURNING id,nome,email,perfil,active,permissions,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, JSON.stringify(permissions)]); return result.rows[0]; },
   async updatePassword(userId, password) { const values = passwordHash(password); const result = await pool.query('UPDATE users SET salt=$2, hash=$3, must_change_password=false WHERE id=$1 RETURNING id,nome,email,perfil,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, values.salt, values.hash]); return result.rows[0]; },
@@ -243,6 +255,13 @@ async function ensurePatrimonyCodeAvailable(resource, record, recordId = null) {
   const existing = (await store.records('patrimonio')).find(item => item.codigo.toLowerCase() === record.patrimonio.toLowerCase() && !(item.origem === resource && item.origemId === recordId));
   return existing ? `O patrimônio ${record.patrimonio} já está vinculado a outro item.` : null;
 }
+async function ensureSerialNumberAvailable(resource, record, recordId = null) {
+  if (!isAsset(resource) || !record.numeroSerie) return null;
+  const serial = record.numeroSerie.toLowerCase();
+  const resources = ['computadores', 'equipamentos'];
+  for (const kind of resources) for (const item of await store.records(kind)) if (item.numeroSerie && item.numeroSerie.toLowerCase() === serial && !(kind === resource && item.id === recordId) && !/devolvido|baixado/i.test(item.status || item.condicao || '')) return `O número de série ${record.numeroSerie} já está vinculado a um item em uso.`;
+  return null;
+}
 async function syncAssetPatrimony(resource, asset, userId) {
   if (!isAsset(resource)) return;
   const fields = { codigo: asset.patrimonio, descricao: assetDescription(resource, asset), localizacao: asset.localizacao || asset.responsavel, situacao: assetSituation(resource, asset), origem: resource, origemId: asset.id };
@@ -316,12 +335,13 @@ async function api(req, res, url) {
     if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'consulta'].includes(perfil) || senha.length < 12 || !/[a-z]/.test(senha) || !/[A-Z]/.test(senha) || !/\d/.test(senha) || !/[^A-Za-z0-9]/.test(senha)) return error(res, 422, 'Revise os dados: senha com 12+ caracteres, maiúscula, minúscula, número e símbolo.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
     const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, active: true, permissions, salt, hash, mustChangePassword: true, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil, permissions }); return respond(res, 201, { user: publicUser(created) });
   }
+  const renameMatch = pathname.match(/^\/api\/users\/([\w-]+)\/name$/); if (req.method === 'PUT' && renameMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { nome } = await requestBody(req); const clean = repairTextEncoding(String(nome || '').trim()); if (!clean || clean.length > 120) return error(res, 422, 'Informe um nome válido.'); const updated = await store.renameUser(renameMatch[1], clean); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'alterou nome de usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const permissionsMatch = pathname.match(/^\/api\/users\/([\w-]+)\/permissions$/); if (req.method === 'PUT' && permissionsMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar permissões.'); if (permissionsMatch[1] === user.id) return error(res, 422, 'As permissões do seu próprio administrador não podem ser restringidas.'); const body = await requestBody(req); const updated = await store.setUserPermissions(permissionsMatch[1], normalizePermissions(body.permissions)); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'alterou permissões', 'users', updated.id, { nome: updated.nome, permissions: updated.permissions }); return respond(res, 200, { user: publicUser(updated) }); }
   const activationMatch = pathname.match(/^\/api\/users\/([\w-]+)\/active$/); if (req.method === 'PUT' && activationMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { active } = await requestBody(req); if (typeof active !== 'boolean') return error(res, 422, 'Informe o estado do usuário.'); if (activationMatch[1] === user.id && !active) return error(res, 422, 'Você não pode desativar seu próprio usuário.'); const updated = await store.setUserActive(activationMatch[1], active); if (!updated) return error(res, 404, 'Usuário não encontrado.'); if (!active) for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, active ? 'ativou usuário' : 'desativou usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return error(res, 422, 'Use ao menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
   const historyMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/([\w-]+)\/history$/); if (req.method === 'GET' && historyMatch) { const [, resource, recordId] = historyMatch; if (!resourceDefinitions[resource] || !canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para este histórico.'); return respond(res, 200, { logs: await store.audits(resource, recordId) }); }
-  if (req.method === 'GET' && pathname === '/api/locations/computadores') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); const records = await store.records('computadores'); const groups = await store.computerGroups(); return respond(res, 200, { groups: groups.map(group => ({ group, total: records.filter(record => record.grupo === group).length })), records }); }
+  if (req.method === 'GET' && pathname === '/api/locations/computadores') { if (!canAccess(user, 'equipamentos')) return error(res, 403, 'Você não tem permissão para equipamentos.'); const records = await store.records('equipamentos'); const groups = [...new Set(records.map(record => record.categoriaEquipamento || 'Equipamento'))]; return respond(res, 200, { groups: groups.map(group => ({ group, total: records.filter(record => (record.categoriaEquipamento || 'Equipamento') === group).length })), records: records.map(record => ({ ...record, grupo: record.categoriaEquipamento || 'Equipamento', status: record.condicao })) }); }
   if (req.method === 'GET' && pathname === '/api/demand-statuses') { if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para demandas.'); return respond(res, 200, { statuses: await store.demandStatuses() }); }
   if (req.method === 'GET' && pathname === '/api/computer-groups') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); return respond(res, 200, { groups: await store.computerGroups() }); }
   if (req.method === 'PUT' && pathname === '/api/computer-groups') {
@@ -377,7 +397,7 @@ async function api(req, res, url) {
       if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
       const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
-      const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError);
+      const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
       if (resource === 'demandas') { record.ticket = `TI-${String((await store.records('demandas')).length + 1).padStart(4, '0')}`; record.interacoes = note ? [{ id: id(), texto: note, autorId: user.id, criadoEm: now() }] : []; }
@@ -389,7 +409,7 @@ async function api(req, res, url) {
       if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
       const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
-      const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError);
+      const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload, recordId); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao; const previous = await store.record(resource, recordId);
       const record = await store.updateRecord(resource, recordId, payload, user.id); if (!record) return error(res, 404, 'Registro não encontrado.');
       if (resource === 'demandas' && note) { record.interacoes = [...(previous.interacoes || []), { id: id(), texto: note, autorId: user.id, criadoEm: now() }]; await store.updateRecord(resource, recordId, { interacoes: record.interacoes }, user.id); }
