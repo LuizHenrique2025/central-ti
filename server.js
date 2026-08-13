@@ -105,7 +105,7 @@ function normalizeFileDb(data) {
   }
   return data;
 }
-function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const data = normalizeFileDb(JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); writeFileDb(data); return data; }
+function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const raw = fs.readFileSync(DB_FILE, 'utf8').replace(/^\uFEFF/, ''); const data = normalizeFileDb(JSON.parse(raw)); writeFileDb(data); return data; }
 function createFileBackup(force = false) {
   if (DATABASE_URL || !fs.existsSync(DB_FILE)) return null;
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -216,7 +216,7 @@ function sanitizeDemand(values) {
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
 function validateRecordCharacters(resource, payload) {
-  for (const value of Object.values(payload)) if (typeof value === 'string' && /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F<>]/.test(value)) return 'Não use caracteres de controle ou os símbolos < e > nos campos.';
+  for (const value of Object.values(payload)) if (typeof value === 'string' && /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F<>\uFFFD]/.test(value)) return 'Há caracteres inválidos no cadastro. Revise acentos, símbolos e texto copiado.';
   if (isAsset(resource)) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{1,49}$/.test(payload.patrimonio)) return 'O patrimônio deve ter de 2 a 50 caracteres: letras, números, ponto, hífen, sublinhado ou barra.';
     if (resource === 'computadores' && !net.isIP(payload.ip)) return 'Informe um endereço IP válido, por exemplo: 192.168.1.25.';
