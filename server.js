@@ -33,7 +33,7 @@ const resourceDefinitions = {
   materiais: ['item', 'categoria', 'quantidade', 'minimo'],
   programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'status'],
   equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'localizacao', 'condicao', 'avaliacao'],
-  ramais: ['ramal', 'setor', 'responsavel', 'email', 'status', 'funcionamento'],
+  ramais: ['ramal', 'setor', 'responsavel', 'status', 'funcionamento'],
   redes: ['nome', 'senha', 'localizacao', 'status'],
   patrimonio: ['codigo', 'produto', 'descricao', 'localizacao', 'situacao'],
   demandas: ['titulo', 'solicitante', 'prioridade', 'status']
@@ -41,6 +41,7 @@ const resourceDefinitions = {
 const optionalResourceFields = {
   computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
   equipamentos: ['numeroSerie', 'dataRetirada', 'dataDevolucao'],
+  ramais: ['email'],
   demandas: ['categoria', 'tecnicoResponsavel', 'prazoSla']
 };
 const access = { admin: Object.keys(resourceDefinitions), ti: Object.keys(resourceDefinitions), consulta: [] };
@@ -233,7 +234,7 @@ function validateRecordCharacters(resource, payload) {
     if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
     if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
   }
-  if (resource === 'ramais' && !/^\S+@\S+\.\S+$/.test(payload.email)) return 'Informe um e-mail válido para o ramal.';
+  if (resource === 'ramais' && payload.email && !/^\S+@\S+\.\S+$/.test(payload.email)) return 'Informe um e-mail válido para o ramal.';
   if (resource === 'programas') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dataContratacao) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dataRenovacao)) return 'Informe datas válidas para contratação e renovação.';
     if (payload.dataRenovacao < payload.dataContratacao) return 'A data de renovação não pode ser anterior à contratação.';
