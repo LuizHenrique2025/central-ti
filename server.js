@@ -31,18 +31,19 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: proc
 const resourceDefinitions = {
   computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
   materiais: ['item', 'categoria', 'quantidade', 'minimo'],
-  recepcoes: ['visitante', 'empresa', 'destino', 'data'],
-  equipamentos: ['patrimonio', 'equipamento', 'modelo', 'responsavel', 'condicao', 'avaliacao'],
-  ramais: ['ramal', 'setor', 'responsavel', 'status', 'funcionamento'],
-  redes: ['nome', 'ip', 'localizacao', 'status'],
-  patrimonio: ['codigo', 'descricao', 'localizacao', 'situacao'],
+  programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'status'],
+  equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'condicao', 'avaliacao'],
+  ramais: ['ramal', 'setor', 'responsavel', 'email', 'status', 'funcionamento'],
+  redes: ['nome', 'senha', 'localizacao', 'status'],
+  patrimonio: ['codigo', 'produto', 'descricao', 'localizacao', 'situacao'],
   demandas: ['titulo', 'solicitante', 'prioridade', 'status']
 };
 const optionalResourceFields = {
-  computadores: ['fabricante', 'modelo', 'numeroSerie', 'mac', 'sistemaOperacional', 'dataGarantia', 'ultimaManutencao'],
+  computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
+  equipamentos: ['dataRetirada', 'dataDevolucao'],
   demandas: ['categoria', 'tecnicoResponsavel', 'prazoSla']
 };
-const access = { admin: Object.keys(resourceDefinitions), ti: ['computadores', 'materiais', 'equipamentos', 'ramais', 'redes', 'patrimonio', 'demandas'], recepcao: ['recepcoes'], consulta: [] };
+const access = { admin: Object.keys(resourceDefinitions), ti: Object.keys(resourceDefinitions), consulta: [] };
 const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
 
 function id() { return crypto.randomUUID(); }
@@ -81,7 +82,8 @@ function normalizeFileDb(data) {
   for (const resource of ['computadores', 'equipamentos']) for (const record of data[resource]) {
     if (!record.avaliacao) record.avaliacao = /manuten/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : 'Bom';
   }
-  for (const record of data.equipamentos) record.patrimonio ||= 'Não informado';
+  for (const record of data.equipamentos) { record.patrimonio ||= 'Não informado'; record.categoriaEquipamento ||= 'Periférico'; record.ip ||= '0.0.0.0'; record.dataRetirada ||= ''; record.dataDevolucao ||= ''; }
+  for (const record of data.patrimonio) record.produto ||= record.descricao || 'Item patrimonial';
   for (const record of data.computadores) {
     record.ip ||= 'Não informado';
     record.grupo ||= 'Geral';
@@ -104,7 +106,7 @@ function createFileBackup(force = false) {
   return backupPath;
 }
 function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); createFileBackup(); }
-function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, mustChangePassword: Boolean(user.mustChangePassword), createdAt: user.createdAt }; }
+function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil, permissions: user.permissions || null, mustChangePassword: Boolean(user.mustChangePassword), createdAt: user.createdAt }; }
 function pgRecord(row) { return { id: row.id, ...row.data, createdAt: row.created_at, updatedAt: row.updated_at, createdBy: row.created_by, updatedBy: row.updated_by }; }
 
 const fileStore = {
@@ -130,10 +132,10 @@ const fileStore = {
   ,async setComputerGroups(groups) { const db = readFileDb(); db.computerGroups = groups; writeFileDb(db); return groups; }
 };
 const pgStore = {
-  async users() { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users ORDER BY nome')).rows; },
-  async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
-  async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
-  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,salt,hash,must_change_password,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [user.id, user.nome, user.email, user.perfil, user.salt, user.hash, user.mustChangePassword, user.createdAt]); return user; },
+  async users() { return (await pool.query('SELECT id, nome, email, perfil, permissions, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users ORDER BY nome')).rows; },
+  async findUserByEmail(email) { return (await pool.query('SELECT id, nome, email, perfil, permissions, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE email = $1', [email])).rows[0]; },
+  async findUser(idValue) { return (await pool.query('SELECT id, nome, email, perfil, permissions, salt, hash, must_change_password AS "mustChangePassword", created_at AS "createdAt" FROM users WHERE id = $1', [idValue])).rows[0]; },
+  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,perfil,permissions,salt,hash,must_change_password,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)', [user.id, user.nome, user.email, user.perfil, JSON.stringify(user.permissions || {}), user.salt, user.hash, user.mustChangePassword, user.createdAt]); return user; },
   async updatePassword(userId, password) { const values = passwordHash(password); const result = await pool.query('UPDATE users SET salt=$2, hash=$3, must_change_password=false WHERE id=$1 RETURNING id,nome,email,perfil,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt"', [userId, values.salt, values.hash]); return result.rows[0]; },
   async records(resource) { return (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 ORDER BY updated_at DESC', [resource])).rows.map(pgRecord); },
   async record(resource, recordId) { const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
@@ -161,7 +163,7 @@ async function initializePostgres() {
     CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, user_id UUID, action TEXT NOT NULL, resource TEXT, record_id UUID, details JSONB, created_at TIMESTAMPTZ NOT NULL);
     CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL);
     CREATE INDEX IF NOT EXISTS audit_resource_record_idx ON audit_logs(resource, record_id, created_at DESC);`);
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false; ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB');
   const count = Number((await pool.query('SELECT COUNT(*)::int AS count FROM users')).rows[0].count);
   if (!count) {
     const data = fs.existsSync(DB_FILE) ? readFileDb() : initialData();
@@ -181,7 +183,7 @@ function clientIp(req) { return req.socket.remoteAddress || 'unknown'; }
 function tooManyAttempts(req) { const attempt = loginAttempts.get(clientIp(req)); return attempt && attempt.count >= 8 && Date.now() - attempt.last < 15 * 60 * 1000; }
 function recordAttempt(req, success) { const ip = clientIp(req); if (success) return loginAttempts.delete(ip); const current = loginAttempts.get(ip) || { count: 0, last: 0 }; loginAttempts.set(ip, { count: current.count + 1, last: Date.now() }); }
 async function getAuth(req) { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); const session = token && sessions.get(token); if (!session || session.expiresAt < Date.now()) { if (token) sessions.delete(token); return null; } return store.findUser(session.userId); }
-function canAccess(user, resource, mode = 'read') { if (user.perfil === 'admin') return true; if (mode === 'read' && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
+function canAccess(user, resource, mode = 'read') { if (user.perfil === 'admin') return true; const permission = user.permissions?.[resource]; if (permission) return mode === 'read' ? permission.read !== false : Boolean(permission[mode]); if (mode === 'read' && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
 async function requireAuth(req, res) { const user = await getAuth(req); if (!user) { error(res, 401, 'Sua sessão expirou. Entre novamente.'); return null; } return user; }
 function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : ''; if (!value || value.length > 250) return null; item[key] = value; } const resource = Object.entries(resourceDefinitions).find(([, fields]) => fields === keys)?.[0]; for (const key of optionalResourceFields[resource] || []) { const value = repairTextEncoding(String(values[key] || '').trim()); if (value.length > 250) return null; item[key] = value; } if (values.observacoes !== undefined) { const observacoes = repairTextEncoding(String(values.observacoes || '').trim()); if (observacoes.length > 5000) return null; item.observacoes = observacoes; } if (resource === 'demandas') { const note = repairTextEncoding(String(values.novaObservacao || '').trim()); if (note.length > 3000) return null; item.novaObservacao = note; if (values.tipo === 'externa') { for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; item[key] = value; } if (!/^\S+@\S+\.\S+$/.test(item.email)) return null; item.tipo = 'externa'; } else item.tipo = 'interna'; } return item; }
 function sanitizeDemand(values) {
@@ -208,6 +210,17 @@ function validateRecordCharacters(resource, payload) {
     if (payload.dataSolicitacao && payload.dataRetirada && payload.dataSolicitacao > payload.dataRetirada) return 'A retirada não pode ser anterior à solicitação.';
     if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
   }
+  if (resource === 'equipamentos') {
+    if (!net.isIP(payload.ip)) return 'Informe um endereço IP válido para localizar o equipamento na rede.';
+    const dates = [payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
+    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
+    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
+  }
+  if (resource === 'ramais' && !/^\S+@\S+\.\S+$/.test(payload.email)) return 'Informe um e-mail válido para o ramal.';
+  if (resource === 'programas') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dataContratacao) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dataRenovacao)) return 'Informe datas válidas para contratação e renovação.';
+    if (payload.dataRenovacao < payload.dataContratacao) return 'A data de renovação não pode ser anterior à contratação.';
+  }
   return null;
 }
 function isAsset(resource) { return resource === 'computadores' || resource === 'equipamentos'; }
@@ -218,7 +231,7 @@ function assetSituation(resource, record) {
   if (current.includes('indispon')) return 'Indisponível';
   return 'Em uso';
 }
-function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.modelo}`; }
+function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.categoriaEquipamento || 'Equipamento'}`; }
 async function ensurePatrimonyCodeAvailable(resource, record, recordId = null) {
   if (!isAsset(resource)) return null;
   if (!record.patrimonio || record.patrimonio === 'Não informado') return 'Informe um código patrimonial válido.';
@@ -245,6 +258,16 @@ async function alertAssetCondition(resource, record, userId) {
   if (!isAsset(resource) || record.avaliacao === 'Bom') return;
   const assetName = resource === 'computadores' ? `Computador ${record.patrimonio}` : `${record.equipamento} (${record.patrimonio})`;
   await notifyAdmins(userId, `Alerta técnico: ${assetName}`, `${assetName} está marcado como “${record.avaliacao}”. Responsável: ${record.responsavel}. Verifique o cadastro na Central TI.`);
+}
+async function notifyTicketLifecycle(previous, record, actorId) {
+  if (!record.solicitante) return;
+  const people = await store.users();
+  const requester = people.find(person => person.nome.trim().toLowerCase() === record.solicitante.trim().toLowerCase());
+  if (!requester || requester.id === actorId) return;
+  const wasAssigned = !previous?.tecnicoResponsavel && record.tecnicoResponsavel;
+  const wasFinished = previous && previous.status !== 'Concluída' && record.status === 'Concluída';
+  if (wasAssigned) await store.createMessage({ id: id(), senderId: actorId, recipientId: requester.id, subject: `Atendimento iniciado · ${record.ticket || 'Demanda'}`, body: `Olá, ${requester.nome}. Sua demanda “${record.titulo}” foi assumida por ${record.tecnicoResponsavel}. O atendimento foi iniciado.`, createdAt: now(), readAt: null, systemAlert: true });
+  if (wasFinished) await store.createMessage({ id: id(), senderId: actorId, recipientId: requester.id, subject: `Atendimento concluído · ${record.ticket || 'Demanda'}`, body: `Olá, ${requester.nome}. Sua demanda “${record.titulo}” foi concluída. Caso precise de algo mais, abra uma nova demanda.`, createdAt: now(), readAt: null, systemAlert: true });
 }
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
 function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
@@ -283,8 +306,9 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/users') return respond(res, 200, { users: (await store.users()).map(publicUser) });
   if (req.method === 'POST' && pathname === '/api/users') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem criar usuários.'); const body = await requestBody(req); const nome = String(body.nome || '').trim(); const email = String(body.email || '').trim().toLowerCase(); const perfil = String(body.perfil || 'consulta'); const senha = String(body.senha || '');
-    if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'recepcao', 'consulta'].includes(perfil) || senha.length < 12 || !/[a-z]/.test(senha) || !/[A-Z]/.test(senha) || !/\d/.test(senha) || !/[^A-Za-z0-9]/.test(senha)) return error(res, 422, 'Revise os dados: senha com 12+ caracteres, maiúscula, minúscula, número e símbolo.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
-    const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, salt, hash, mustChangePassword: true, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil }); return respond(res, 201, { user: publicUser(created) });
+    const rawPermissions = body.permissions && typeof body.permissions === 'object' ? body.permissions : {}; const permissions = {}; for (const resource of Object.keys(resourceDefinitions)) { const requested = rawPermissions[resource]; if (requested && typeof requested === 'object') permissions[resource] = { read: requested.read !== false, write: Boolean(requested.write), delete: Boolean(requested.delete) }; }
+    if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'consulta'].includes(perfil) || senha.length < 12 || !/[a-z]/.test(senha) || !/[A-Z]/.test(senha) || !/\d/.test(senha) || !/[^A-Za-z0-9]/.test(senha)) return error(res, 422, 'Revise os dados: senha com 12+ caracteres, maiúscula, minúscula, número e símbolo.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
+    const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, permissions, salt, hash, mustChangePassword: true, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil, permissions }); return respond(res, 201, { user: publicUser(created) });
   }
   const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return error(res, 422, 'Use ao menos 12 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
@@ -312,8 +336,9 @@ async function api(req, res, url) {
       const automatic = !record.avaliacao && /manutenção/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : null;
       const avaliacao = record.avaliacao || automatic || 'Bom';
       if (avaliacao === 'Bom') return null;
-      return { id: record.id, resource, avaliacao, titulo: resource === 'computadores' ? `Computador ${record.patrimonio}` : record.equipamento, detalhe: resource === 'computadores' ? `${record.responsavel} · ${record.localizacao}` : `${record.modelo} · ${record.responsavel}` };
+      return { id: record.id, resource, avaliacao, titulo: resource === 'computadores' ? `Computador ${record.patrimonio}` : record.equipamento, detalhe: resource === 'computadores' ? `${record.responsavel} · ${record.localizacao}` : `${record.categoriaEquipamento || 'Equipamento'} · ${record.responsavel}` };
     }).filter(Boolean).sort((a, b) => ({ 'Troca necessária': 0, 'Precisa de manutenção': 1, Ruim: 2 }[a.avaliacao] ?? 3) - ({ 'Troca necessária': 0, 'Precisa de manutenção': 1, Ruim: 2 }[b.avaliacao] ?? 3));
+    if (canAccess(user, 'programas')) { const limit = new Date(); limit.setDate(limit.getDate() + 30); const today = new Date().toISOString().slice(0, 10), until = limit.toISOString().slice(0, 10); for (const program of await store.records('programas')) if (program.status !== 'Cancelado' && program.dataRenovacao >= today && program.dataRenovacao <= until) notifications.push({ id: program.id, resource: 'programas', avaliacao: 'Renovação próxima', titulo: program.programa, detalhe: `${program.fornecedor} · renovar até ${program.dataRenovacao.split('-').reverse().join('/')}` }); }
     return respond(res, 200, { activeCount: Object.values(counts).reduce((a, b) => a + b, 0), openDemands: demands.length, maintenance, inbox, notifications, demands: demands.slice(0, 4), syncedAt: now() });
   }
   if (req.method === 'GET' && pathname === '/api/messages') { const people = new Map((await store.users()).map(person => [person.id, person])); const messages = (await store.messagesFor(user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(message => ({ ...message, sender: publicUser(people.get(message.senderId)), recipient: publicUser(people.get(message.recipientId)) })); return respond(res, 200, { messages }); }
@@ -341,26 +366,28 @@ async function api(req, res, url) {
     if (req.method === 'POST' && !recordId) {
       const body = await requestBody(req); const payload = sanitize(body, resourceDefinitions[resource]);
       if (!payload) return error(res, 422, resource === 'demandas' ? 'Revise os campos obrigatórios do ticket.' : 'Preencha todos os campos corretamente.');
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
       const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
       if (resource === 'demandas') { record.ticket = `TI-${String((await store.records('demandas')).length + 1).padStart(4, '0')}`; record.interacoes = note ? [{ id: id(), texto: note, autorId: user.id, criadoEm: now() }] : []; }
-      await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record });
+      await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record });
     }
     if (req.method === 'PUT' && recordId) {
       const body = await requestBody(req); const payload = sanitize(body, resourceDefinitions[resource]);
       if (!payload) return error(res, 422, resource === 'demandas' ? 'Revise os campos obrigatórios do ticket.' : 'Preencha todos os campos corretamente.');
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
       const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError);
       const note = payload.novaObservacao; delete payload.novaObservacao; const previous = await store.record(resource, recordId);
       const record = await store.updateRecord(resource, recordId, payload, user.id); if (!record) return error(res, 404, 'Registro não encontrado.');
       if (resource === 'demandas' && note) { record.interacoes = [...(previous.interacoes || []), { id: id(), texto: note, autorId: user.id, criadoEm: now() }]; await store.updateRecord(resource, recordId, { interacoes: record.interacoes }, user.id); }
-      await syncAssetPatrimony(resource, record, user.id); await log(user.id, 'editou registro', resource, record.id, { before: previous, after: payload }); return respond(res, 200, { record });
+      await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); if (resource === 'demandas') await notifyTicketLifecycle(previous, record, user.id); await log(user.id, 'editou registro', resource, record.id, { before: previous, after: payload }); return respond(res, 200, { record });
     }
-    if (req.method === 'DELETE' && recordId) { const removed = await store.deleteRecord(resource, recordId); if (!removed) return error(res, 404, 'Registro não encontrado.'); await retireAssetPatrimony(resource, removed, user.id); await log(user.id, 'excluiu registro', resource, recordId, { values: removed }); return respond(res, 200, { ok: true }); }
+    if (req.method === 'DELETE' && recordId) { if (!canAccess(user, resource, 'delete')) return error(res, 403, 'Você não tem permissão para excluir nesta área.'); const removed = await store.deleteRecord(resource, recordId); if (!removed) return error(res, 404, 'Registro não encontrado.'); await retireAssetPatrimony(resource, removed, user.id); await log(user.id, 'excluiu registro', resource, recordId, { values: removed }); return respond(res, 200, { ok: true }); }
   }
   return error(res, 404, 'Rota não encontrada.');
 }
