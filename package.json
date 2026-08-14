@@ -4,8 +4,8 @@
   "private": true,
   "description": "Sistema interno de gestão de TI",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
   },
   "engines": {
     "node": ">=20"

@@ -12,6 +12,15 @@ npm start
 
 Abra `http://localhost:3000` no navegador.
 
+## Estrutura do projeto
+
+```text
+public/     Telas, JavaScript do navegador e estilos
+server/     Servidor, autenticação, regras e APIs
+storage/    Dados locais do sistema (não enviados ao GitHub)
+backups/    Cópias de segurança locais (não enviadas ao GitHub)
+```
+
 ### Compartilhar na mesma rede
 
 Com o sistema iniciado nesta máquina, o painel mostra o endereço de rede local, por exemplo `http://192.168.x.x:3000`. Envie esse endereço ao seu amigo: ambos trabalharão com os mesmos cadastros e mensagens em tempo real ao atualizar a página.

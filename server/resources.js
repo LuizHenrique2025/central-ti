@@ -1,0 +1,28 @@
+const resourceDefinitions = {
+  computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
+  materiais: ['item', 'categoria', 'quantidade', 'localizacao'],
+  programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'valor', 'status'],
+  equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'localizacao', 'condicao', 'avaliacao'],
+  ramais: ['ramal', 'setor', 'responsavel', 'status', 'funcionamento'],
+  redes: ['nome', 'senha', 'localizacao', 'status'],
+  patrimonio: ['codigo', 'produto', 'descricao', 'localizacao', 'situacao'],
+  demandas: ['titulo', 'solicitante', 'prioridade', 'status']
+};
+
+const optionalResourceFields = {
+  materiais: ['observacoes'],
+  computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
+  equipamentos: ['numeroSerie', 'dataRetirada', 'dataDevolucao'],
+  ramais: ['email'],
+  demandas: ['categoria', 'tecnicoResponsavel', 'prazoSla']
+};
+
+const access = {
+  admin: Object.keys(resourceDefinitions),
+  ti: Object.keys(resourceDefinitions),
+  consulta: []
+};
+
+const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
+
+module.exports = { resourceDefinitions, optionalResourceFields, access, computerChecklist };

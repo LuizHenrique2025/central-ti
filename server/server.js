@@ -6,6 +6,7 @@ const os = require('node:os');
 const net = require('node:net');
 const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
+const { resourceDefinitions, optionalResourceFields, access, computerChecklist } = require('./resources');
 
 function loadEnvFile() {
   const envFile = path.join(__dirname, '.env'); if (!fs.existsSync(envFile)) return;
@@ -14,7 +15,8 @@ function loadEnvFile() {
 loadEnvFile();
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
-const ROOT = __dirname;
+const ROOT = path.resolve(__dirname, '..');
+const PUBLIC_DIR = path.join(ROOT, 'public');
 const DB_DIR = path.join(ROOT, 'storage');
 const DB_FILE = path.join(DB_DIR, 'central-ti.json');
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(ROOT, 'backups');
@@ -28,26 +30,6 @@ const TWO_FACTOR_REQUIRED = process.env.EMAIL_2FA_REQUIRED === 'true';
 const SMTP_ENABLED = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
 const transporter = SMTP_ENABLED ? nodemailer.createTransport({ host: process.env.SMTP_HOST || 'smtp.gmail.com', port: Number(process.env.SMTP_PORT || 465), secure: process.env.SMTP_SECURE !== 'false', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }) : null;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined }) : null;
-
-const resourceDefinitions = {
-  computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
-  materiais: ['item', 'categoria', 'quantidade', 'localizacao'],
-  programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'valor', 'status'],
-  equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'localizacao', 'condicao', 'avaliacao'],
-  ramais: ['ramal', 'setor', 'responsavel', 'status', 'funcionamento'],
-  redes: ['nome', 'senha', 'localizacao', 'status'],
-  patrimonio: ['codigo', 'produto', 'descricao', 'localizacao', 'situacao'],
-  demandas: ['titulo', 'solicitante', 'prioridade', 'status']
-};
-const optionalResourceFields = {
-  materiais: ['observacoes'],
-  computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
-  equipamentos: ['numeroSerie', 'dataRetirada', 'dataDevolucao'],
-  ramais: ['email'],
-  demandas: ['categoria', 'tecnicoResponsavel', 'prazoSla']
-};
-const access = { admin: Object.keys(resourceDefinitions), ti: Object.keys(resourceDefinitions), consulta: [] };
-const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
@@ -330,13 +312,14 @@ async function alertAssetCondition(resource, record, userId) {
   const assetName = resource === 'computadores' ? `Computador ${record.patrimonio}` : `${record.equipamento} (${record.patrimonio})`;
   await notifyAdmins(userId, `Alerta técnico: ${assetName}`, `${assetName} está marcado como “${record.avaliacao}”. Responsável: ${record.responsavel}. Verifique o cadastro na Central TI.`);
 }
+function isCompletedDemandStatus(status) { const normalized = String(status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return /conclu|finaliz|resolvid|encerr/.test(normalized); }
 async function notifyTicketLifecycle(previous, record, actorId) {
   if (!record.solicitante) return;
   const people = await store.users();
   const requester = people.find(person => person.nome.trim().toLowerCase() === record.solicitante.trim().toLowerCase());
   if (!requester || requester.id === actorId) return;
   const wasAssigned = !previous?.tecnicoResponsavel && record.tecnicoResponsavel;
-  const wasFinished = previous && previous.status !== 'Concluída' && record.status === 'Concluída';
+  const wasFinished = previous && !isCompletedDemandStatus(previous.status) && isCompletedDemandStatus(record.status);
   if (wasAssigned) await store.createMessage({ id: id(), senderId: actorId, recipientId: requester.id, subject: `Atendimento iniciado · ${record.ticket || 'Demanda'}`, body: `Olá, ${requester.nome}. Sua demanda “${record.titulo}” foi assumida por ${record.tecnicoResponsavel}. O atendimento foi iniciado.`, createdAt: now(), readAt: null, systemAlert: true });
   if (wasFinished) await store.createMessage({ id: id(), senderId: actorId, recipientId: requester.id, subject: `Atendimento concluído · ${record.ticket || 'Demanda'}`, body: `Olá, ${requester.nome}. Sua demanda “${record.titulo}” foi concluída. Caso precise de algo mais, abra uma nova demanda.`, createdAt: now(), readAt: null, systemAlert: true });
 }
@@ -483,7 +466,7 @@ async function api(req, res, url) {
   }
   return error(res, 404, 'Rota não encontrada.');
 }
-function serveFile(req, res, url) { const requestPath = url.pathname === '/' ? '/index.html' : url.pathname; const publicFiles = new Set(['/index.html', '/app.js', '/styles.css']); if (!publicFiles.has(requestPath)) { res.writeHead(404); return res.end('Página não encontrada'); } const filePath = path.join(ROOT, requestPath.slice(1)); const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' }; res.writeHead(200, { 'content-type': types[path.extname(filePath)] || 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' }); fs.createReadStream(filePath).pipe(res); }
+function serveFile(req, res, url) { const requestPath = url.pathname === '/' ? '/index.html' : url.pathname; const publicFiles = new Set(['/index.html', '/app.js', '/styles.css']); if (!publicFiles.has(requestPath)) { res.writeHead(404); return res.end('Página não encontrada'); } const filePath = path.join(PUBLIC_DIR, requestPath.slice(1)); const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' }; res.writeHead(200, { 'content-type': types[path.extname(filePath)] || 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' }); fs.createReadStream(filePath).pipe(res); }
 const server = http.createServer(async (req, res) => { const url = new URL(req.url, `http://${req.headers.host}`); try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); } });
 async function start() { if (pool) await initializePostgres(); server.listen(PORT, HOST, () => { console.log(`Central TI disponível em http://localhost:${PORT}`); for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`); console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`); }); }
 start().catch(error => { console.error('Não foi possível iniciar a Central TI:', error); process.exit(1); });
