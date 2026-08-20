@@ -2,23 +2,51 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const TOKEN = 'central-ti-token';
 const KIT = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
 const modules = {
-  demandas: { name: 'Demandas', icon: '✓', fields: [['titulo', 'Demanda', 'Resumo da demanda'], ['tipo', 'Tipo', 'interna,externa'], ['solicitante', 'Solicitante', 'Nome do solicitante'], ['categoria', 'Categoria', 'OPTIONAL_SELECT:Acesso,Hardware,Software,Rede,Impressão,Telefonia,Outro'], ['tecnicoResponsavel', 'Técnico responsável', 'TECHNICIAN'], ['prioridade', 'Prioridade', 'Baixa,Média,Alta,Crítica'], ['prazoSla', 'Prazo / SLA', 'DATE_OPTIONAL'], ['status', 'Status', 'DEMAND_STATUS'], ['empresa', 'Empresa (somente externa)', 'OPTIONAL'], ['contato', 'Contato externo (somente externa)', 'OPTIONAL'], ['email', 'E-mail externo (somente externa)', 'OPTIONAL_EMAIL'], ['descricao', 'Descrição da demanda externa', 'OPTIONAL_TEXTAREA']] },
+  demandas: { name: 'Demandas', icon: '✓', fields: [['titulo', 'Demanda', 'Resumo da demanda'], ['tipo', 'Tipo', 'interna,externa'], ['solicitante', 'Solicitante', 'Nome do solicitante'], ['categoria', 'Categoria', 'DEMAND_CATEGORY'], ['outroDetalhe', 'Informe o que é', 'DEMAND_OTHER'], ['tecnicoResponsavel', 'Técnico responsável', 'TECHNICIAN'], ['prioridade', 'Prioridade', 'Baixa,Média,Alta,Crítica'], ['prazoSla', 'Prazo / SLA', 'DATE_OPTIONAL'], ['status', 'Status', 'DEMAND_STATUS'], ['descricao', 'Descrição da demanda externa (opcional)', 'OPTIONAL_TEXTAREA']] },
   materiais: { name: 'Materiais disponíveis na T.I.', icon: '◫', fields: [['item', 'Item', 'Nome do material'], ['categoria', 'Categoria', 'Ex.: Periféricos'], ['quantidade', 'Quantidade disponível', '0'], ['localizacao', 'Onde está guardado', 'Ex.: Armário da T.I.']] },
   programas: { name: 'Controle de Programas', icon: '◫', fields: [['programa', 'Programa / serviço', 'Nome do programa'], ['fornecedor', 'Fornecedor', 'Empresa contratada'], ['dataContratacao', 'Data da contratação', 'DATE_REQUIRED'], ['formaPagamento', 'Forma de pagamento', 'Cartão,Boleto,PIX,Transferência,Outro'], ['periodicidade', 'Periodicidade', 'Mensal,Anual'], ['dataRenovacao', 'Próxima renovação', 'DATE_REQUIRED'], ['valor', 'Valor da cobrança', 'CURRENCY'], ['status', 'Status', 'Ativo,Em renovação,Cancelado']] },
   equipamentos: { name: 'Controle de Equipamentos', icon: '◉', fields: [['patrimonio', 'Patrimônio', 'Código ou etiqueta'], ['equipamento', 'Equipamento', 'Nome do equipamento'], ['categoriaEquipamento', 'Subgrupo', 'Periférico,Computador,Notebook,Totem,Impressora'], ['numeroSerie', 'Número de série', 'OPTIONAL'], ['ip', 'IP do equipamento', 'Ex.: 192.168.1.25'], ['responsavel', 'Responsável', 'USER'], ['localizacao', 'Localização', 'Setor / sala'], ['condicao', 'Status', 'Em uso,Devolvido,Em manutenção'], ['avaliacao', 'Avaliação', 'Bom,Ruim,Precisa de manutenção,Troca necessária'], ['dataRetirada', 'Data de retirada', 'DATE_OPTIONAL'], ['dataDevolucao', 'Data de devolução', 'DATE_OPTIONAL']] },
-  ramais: { name: 'Ramais', icon: '☎', fields: [['ramal', 'Ramal', 'Ex.: 204'], ['setor', 'Setor', 'Ex.: Faturamento'], ['responsavel', 'Responsável', 'USER'], ['email', 'E-mail', 'OPTIONAL_EMAIL'], ['status', 'Ativação', 'Ativo,Inativo'], ['funcionamento', 'Funcionamento', 'Bom funcionamento,Com falha,Em manutenção']] },
+  ramais: { name: 'Ramais', icon: '☎', fields: [['ramal', 'Ramal', 'Ex.: 204'], ['setor', 'Categoria / setor', 'RAMAL_SECTOR'], ['responsavel', 'Responsável', 'USER'], ['email', 'E-mail', 'OPTIONAL_EMAIL'], ['status', 'Ativação', 'Ativo,Inativo'], ['funcionamento', 'Funcionamento', 'Bom funcionamento,Com falha,Em manutenção']] },
   redes: { name: 'Redes', icon: '⌁', fields: [['nome', 'Nome da rede', 'Nome da rede'], ['senha', 'Senha', 'PASSWORD_REQUIRED'], ['localizacao', 'Localização', 'Setor / rack'], ['status', 'Status', 'Ativa,Inativa,Em manutenção']] },
   patrimonio: { name: 'Patrimônio', icon: '◇', fields: [['codigo', 'Código', 'Código patrimonial'], ['produto', 'Produto', 'Nome do produto'], ['descricao', 'Descrição', 'Descrição do item'], ['localizacao', 'Localização', 'Setor / sala'], ['situacao', 'Situação', 'Em uso,Disponível,Em manutenção,Baixado']] }
 };
+const DEMAND_CATEGORIES = {
+  Hardware: ['Computador', 'Fone', 'Impressora', 'Tomografia', 'Raio X', 'Etiquetadora', 'Scanner'],
+  Software: [
+    'RealClinic — Login / Acesso',
+    'RealClinic — Exclusão de pagamento particular',
+    'RealClinic — Exclusão de fatura',
+    'RealClinic — Exclusão de atendimento',
+    'RealClinic — Alterar convênio',
+    'RealClinic — Incluir procedimento',
+    'RealClinic — Atualizar valor de procedimento',
+    'RealClinic — Atualizar taxa',
+    'RealClinic — Incluir profissional',
+    'RealClinic — Abrir chamado TDSA',
+    'RealClinic — Relatório',
+    'RealClinic — Movimentação de estoque',
+    'RealClinic — Atualizar tabela',
+    'IPTell — Bot',
+    'IPTell — Login / Acesso',
+    'Site do hospital'
+  ],
+  'Impressão': ['Toner', 'Etiqueta'],
+  Telefonia: ['Telefones', 'Ramais', 'MicroSIP'],
+  Outros: []
+};
+const RAMAL_SECTORS = ['Administrativo', 'Atendimento', 'Auditoria', 'Centro Cirúrgico', 'Compras', 'Contabilidade', 'Enfermagem', 'Farmácia', 'Faturamento', 'Financeiro', 'Internação', 'Laboratório', 'Recepção', 'Recursos Humanos', 'T.I.', 'Tomografia', 'Raio X', 'Outros'];
 const moduleFilters = {
   materiais: [['categoria', 'Categoria']],
   programas: [['status', 'Status'], ['periodicidade', 'Periodicidade']],
   equipamentos: [['categoriaEquipamento', 'Subgrupo'], ['condicao', 'Status'], ['responsavel', 'Responsável'], ['localizacao', 'Localização']],
-  ramais: [['setor', 'Setor'], ['status', 'Ativação'], ['funcionamento', 'Funcionamento']],
+  ramais: [['setor', 'Categoria / setor'], ['status', 'Ativação'], ['funcionamento', 'Funcionamento']],
   redes: [['status', 'Status'], ['localizacao', 'Localização']],
   patrimonio: [['situacao', 'Situação'], ['localizacao', 'Localização']]
 };
-const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, firstAccess: null, loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, mailFolder: 'inbox', selectedMessageId: null, mailQuery: '' };
+const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, firstAccess: null, loginStep: 'identifier', loginIdentifier: '', loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, mailFolder: 'inbox', selectedMessageId: null, mailQuery: '' };
+let navigationRequest = 0;
+let sidebarCollapsed = localStorage.getItem('central-ti-sidebar-collapsed') === 'true';
+let colorTheme = localStorage.getItem('central-ti-theme') === 'light' ? 'light' : 'dark';
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 const formatDate = value => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 const formatSla = value => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '';
@@ -38,18 +66,23 @@ async function api(url, options = {}) {
   return data;
 }
 function tag(value) { const text = String(value || ''), normalized = text.toLowerCase(); const kind = /(bom|ativo|online|operacional|concluída|disponível|em uso)/.test(normalized) ? 'success' : /(ruim|manutenção|média|andamento|renovação)/.test(normalized) ? 'warning' : /(troca|crítica|alta|offline|indisponível|baixado|cancelado)/.test(normalized) ? 'danger' : ''; return `<span class="tag ${kind}">${esc(text)}</span>`; }
+function demandCardControl(card) {
+  if (!canUpdate('demandas')) return '';
+  if (!card.tecnicoResponsavel) return `<button class="card-details" onclick="event.stopPropagation();openDemandDetails('${card.id}')">Ver detalhes</button>`;
+  return `<select onclick="event.stopPropagation()" onchange="moveDemand('${card.id}',this.value)">${state.statuses.map(option => `<option ${option === card.status ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>`;
+}
 function nav(id, label, icon, count = 0) { return `<button class="${state.page === id ? 'active' : ''}" onclick="go('${id}')"><span class="nav-icon">${icon}</span><span class="label">${label}</span>${count ? `<b class="nav-badge" style="margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:grid;place-items:center;background:#ef5a62;color:#fff;font-size:10px;line-height:1">${count > 99 ? '99+' : count}</b>` : ''}</button>`; }
 function sidebar() { const links = Object.entries(modules).filter(([id]) => id !== 'demandas' && id !== 'computadores' && canRead(id)).map(([id, module]) => nav(id, module.name, module.icon)).join(''); const demandLinks = canRead('demandas') ? (state.user?.perfil === 'admin' ? `${nav('demandas-internas', 'Demandas Internas (T.I.)', '✓')}${nav('demandas-externas', 'Demandas Hospital', '✓')}` : nav('demandas-externas', 'Demandas Hospital', '✓')) : ''; return `<aside class="sidebar"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><nav class="nav"><div class="nav-section">PAINEL</div>${nav('dashboard', 'Visão geral', '⌘')}${state.user?.perfil === 'admin' ? nav('relatorios', 'Relatórios', '▤') : ''}${canRead('equipamentos') ? nav('localizacao', 'Localizar equipamentos', '⌖') : ''}<div class="nav-section">GESTÃO</div>${demandLinks}${links}${state.user.perfil === 'admin' ? `<div class="nav-section">ACESSOS</div>${nav('usuarios', 'Usuários', '♙')}` : ''}<div class="nav-section">COMUNICAÇÃO</div>${nav('email', 'E-mail interno', '✉', state.unreadMessages)}</nav><div class="user-box"><div class="avatar">${esc(state.user.nome.slice(0, 2).toUpperCase())}</div><div><div class="user-name">${esc(state.user.nome)}</div><div class="user-role">${esc(role(state.user.perfil))}</div></div><button class="logout" onclick="logout()">↪</button></div></aside>`; }
 function header(title, subtitle) { return `<div class="topbar"><div><div class="eyebrow">${esc(subtitle || 'Central TI')}</div><h1 class="page-title">${esc(title)}</h1></div></div>`; }
 function dashboard() { const d = state.dashboard || { notifications: [], announcements: [], activeCount: 0, openDemands: 0, inbox: 0 }, notifications = d.notifications || []; return `${header('Visão geral', `Olá, ${state.user.nome}`)}<section class="metrics">${[['Ativos cadastrados', d.activeCount, '▣'], ['Demandas abertas', d.openDemands, '✓'], ['Alertas técnicos', notifications.length, '⚠'], ['Mensagens não lidas', d.inbox, '✉']].map(item => `<div class="metric"><div class="metric-head"><div class="metric-name">${item[0]}</div><div class="metric-icon">${item[2]}</div></div><div class="metric-number">${item[1]}</div></div>`).join('')}</section>${notifications.length ? `<section class="dashboard-grid"><div class="panel"><div class="panel-heading"><div><h3>Notificações técnicas</h3><div class="panel-subtitle">Itens que exigem atenção</div></div></div><div class="demand-list">${notifications.map(note => `<div class="demand"><span class="status ${note.avaliacao === 'Troca necessária' ? 'critical' : 'wait'}"></span><div><div class="demand-title">${esc(note.titulo)} · ${tag(note.avaliacao)}</div><div class="demand-meta">${esc(note.detalhe)}</div></div></div>`).join('')}</div></div><div class="panel"><div class="panel-heading"><div><h3>Acesso pela rede</h3><div class="panel-subtitle">Compartilhe com sua equipe</div></div></div><div class="network-box">${state.networkUrls.map(url => `<code>${esc(url)}</code>`).join('') || 'Endereço não identificado.'}<p>Os dados são compartilhados entre todos os usuários da Central TI.</p></div></div></section>` : ''}<section class="panel announcements"><div class="panel-heading"><div><h3>Comunicados da T.I.</h3><div class="panel-subtitle">Informações importantes para todos os usuários</div></div>${state.user?.perfil === 'admin' ? '<button class="add-record" onclick="openAnnouncement()">+ Comunicado</button>' : ''}</div><div class="announcement-list">${(d.announcements || []).map(item => `<article class="announcement"><div><h4>${esc(item.title)}</h4><p>${esc(item.body).replace(/\n/g, '<br/>')}</p><small>Por ${esc(item.authorName)} · ${formatDate(item.createdAt)}</small></div>${state.user?.perfil === 'admin' ? `<button class="danger-link" onclick="deleteAnnouncement('${item.id}')">Remover</button>` : ''}</article>`).join('') || '<div class="empty">Nenhum comunicado publicado.</div>'}</div></section>`; }
 function locationPage() { const data = state.locations || { groups: [], records: [] }; const records = data.records.filter(record => Object.values(record).join(' ').toLowerCase().includes(state.query.toLowerCase())); return `${header('Localizar equipamentos', 'Busca por IP, patrimônio, subgrupo ou setor')}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Ex.: 192.168.2.25, PC-0048 ou Computador"/></div><section class="location-groups">${data.groups.map(item => `<button onclick="setSearch('${esc(item.group)}')"><b>${esc(item.group)}</b><span>${item.total} item(ns)</span></button>`).join('')}</section><div class="panel table-panel">${records.length ? `<table class="data-table"><thead><tr><th>Patrimônio</th><th>IP</th><th>Subgrupo</th><th>Localização</th><th>Responsável</th><th>Status</th></tr></thead><tbody>${records.map(record => `<tr><td><b>${esc(record.patrimonio)}</b></td><td><code>${esc(record.ip)}</code></td><td>${tag(record.grupo)}</td><td>${esc(record.localizacao)}</td><td>${esc(record.responsavel)}</td><td>${tag(record.status)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nenhum equipamento encontrado.</div>'}</div>`; }
-function demandBoard() { const cards = state.records.filter(record => record.titulo.toLowerCase().includes(state.query.toLowerCase())); return `${header('Demandas', 'Quadro de trabalho')}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar demanda..."/><div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button><button class="add-record" onclick="openRecord('demandas')">+ Nova demanda</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" draggable="true" ondragstart="dragDemand(event,'${card.id}')"><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}<select onchange="moveDemand('${card.id}',this.value)">${state.statuses.map(option => `<option ${option === card.status ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`; }
+function demandBoard() { const cards = state.records.filter(record => String(record.titulo || '').toLowerCase().includes(state.query.toLowerCase())); return `${header('Demandas', 'Quadro de trabalho')}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar demanda..."/><div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button><button class="add-record" onclick="openRecord('demandas')">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" draggable="true" onclick="openDemandDetails('${card.id}')" ondragstart="dragDemand(event,'${card.id}')"><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`; }
 function filteredDemandBoard(type) {
   const external = type === 'externa';
-  const cards = state.records.filter(record => (record.tipo || 'interna') === type && record.titulo.toLowerCase().includes(state.query.toLowerCase()));
+  const cards = state.records.filter(record => (record.tipo || 'interna') === type && String(record.titulo || '').toLowerCase().includes(state.query.toLowerCase()));
   const title = external ? 'Demandas Hospital' : 'Demandas Internas';
   const subtitle = external ? 'Hospital · solicitações de setores externos' : 'T.I. · atividades internas da equipe';
-  return `${header(title, subtitle)}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar demanda..."/><div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" onclick="openDemand('${type}')">+ Nova demanda</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" ${canUpdate('demandas') ? 'draggable="true" ondragstart="dragDemand(event,\'' + card.id + '\')"' : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.categoria || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}${card.prazoSla ? ` · SLA: ${esc(card.prazoSla.split('-').reverse().join('/'))}` : ''}</div><div class="demand-card-bottom">${tag(card.prioridade)}${canUpdate('demandas') ? `<select onchange="moveDemand('${card.id}',this.value)">${state.statuses.map(option => `<option ${option === card.status ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>` : ''}</div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`;
+  return `${header(title, subtitle)}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar demanda..."/><div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" onclick="openDemand('${type}')">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" onclick="openDemandDetails('${card.id}')" ${canUpdate('demandas') ? 'draggable="true" ondragstart="dragDemand(event,\'' + card.id + '\')"' : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.categoria || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}${card.prazoSla ? ` · SLA: ${esc(card.prazoSla.split('-').reverse().join('/'))}` : ''}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`;
 }
 function recordsPage(resource) {
   const module = modules[resource];
@@ -70,13 +103,16 @@ function usersPage() { return `${header('Usuários', 'Acessos e permissões')}<d
 function field([key, label, source], record) {
   if (key === 'prazoSla' || state.user?.perfil !== 'admin' && ['tecnicoResponsavel', 'empresa', 'contato', 'email', 'status'].includes(key)) return '';
   const demandType = record?.tipo || state.newDemandType || 'interna';
-  if (state.modal?.resource === 'demandas' && ['empresa', 'contato', 'email', 'descricao'].includes(key) && demandType !== 'externa') return '';
+  if (state.modal?.resource === 'demandas' && ['empresa', 'contato', 'email'].includes(key) && demandType !== 'externa') return '';
   if (state.modal?.resource === 'patrimonio' && key === 'codigo' && !record) return `<label class="field">${label}<input value="Será gerado automaticamente" readonly aria-readonly="true" style="background:#f5f7fa;color:#65758a;cursor:not-allowed"/></label>`;
   if (key === 'tipo' && state.user?.perfil !== 'admin' && state.newDemandType === 'externa') return `<label class="field">${label}<input name="tipo" value="externa" readonly style="text-transform:uppercase"/></label>`;
   if (key === 'solicitante' && state.user?.perfil !== 'admin' && state.newDemandType === 'externa') return `<label class="field">${label}<input name="solicitante" value="${esc(state.user.nome)}" readonly/></label>`;
   const value = record?.[key] || (key === 'tipo' ? (state.newDemandType || 'interna') : '');
+  if (source === 'DEMAND_CATEGORY') { const selectedCategory = record?.categoria || ''; const selectedSubject = record?.assunto || ''; return `<label class="field">${label}<input type="hidden" name="categoria" value="${esc(selectedCategory)}"/><select name="assunto" required onchange="updateDemandCategory(this)"><option value="">Selecione a categoria e o item</option>${Object.entries(DEMAND_CATEGORIES).map(([category, subjects]) => category === 'Outros' ? `<option value="Outros" data-category="Outros" ${selectedCategory === 'Outros' ? 'selected' : ''}>Outros</option>` : `<optgroup label="${esc(category)}">${subjects.map(subject => `<option value="${esc(subject)}" data-category="${esc(category)}" ${selectedCategory === category && selectedSubject === subject ? 'selected' : ''}>${esc(subject)}</option>`).join('')}</optgroup>`).join('')}</select></label>`; }
+  if (source === 'DEMAND_SUBCATEGORY') { const category = record?.categoria || ''; const options = DEMAND_CATEGORIES[category] || []; return `<label class="field demand-subcategory" ${category === 'Outros' ? 'hidden' : ''}>${label}<select name="${key}" ${category && category !== 'Outros' ? 'required' : ''}><option value="">Selecione</option>${options.map(option => `<option ${option === value ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></label>`; }
+  if (source === 'DEMAND_OTHER') { const category = record?.categoria || ''; return `<label class="field demand-other ${category === 'Outros' ? '' : 'hidden'}">${label}<input name="${key}" maxlength="250" value="${esc(value)}" placeholder="Descreva o tipo da solicitação" ${category === 'Outros' ? 'required' : ''}/></label>`; }
   if (source.startsWith('OPTIONAL_SELECT:')) { const options = source.slice('OPTIONAL_SELECT:'.length).split(','); return `<label class="field">${label}<select name="${key}"><option value="">Não informado</option>${options.map(option => `<option ${option === value ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></label>`; }
-  if (source === 'OPTIONAL_TEXTAREA') { const locked = key === 'descricao' && record ? 'readonly aria-readonly="true"' : ''; const lockedStyle = locked ? 'background:#f5f7fa;color:#536273;cursor:not-allowed;' : ''; const creator = record && key === 'descricao' ? (state.users.find(user => user.id === record.createdBy)?.nome || record.solicitante || 'Usuário não informado') : ''; const createdInfo = creator ? `<small style="display:block;margin-top:7px;color:#65758a;font-size:12px">Solicitação registrada por <b>${esc(creator)}</b>${record.createdAt ? ` em ${formatDate(record.createdAt)}` : ''}.</small>` : ''; return `<label class="field">${label}<textarea name="${key}" rows="3" maxlength="3000" placeholder="Obrigatória quando o tipo for externa" ${locked} style="resize:none;overflow-y:auto;${lockedStyle}">${esc(value)}</textarea>${createdInfo}</label>`; }
+  if (source === 'OPTIONAL_TEXTAREA') { const locked = key === 'descricao' && record ? 'readonly aria-readonly="true"' : ''; const lockedStyle = locked ? 'background:#f5f7fa;color:#536273;cursor:not-allowed;' : ''; const creator = record && key === 'descricao' ? (state.users.find(user => user.id === record.createdBy)?.nome || record.solicitante || 'Usuário não informado') : ''; const createdInfo = creator ? `<small style="display:block;margin-top:7px;color:#65758a;font-size:12px">Solicitação registrada por <b>${esc(creator)}</b>${record.createdAt ? ` em ${formatDate(record.createdAt)}` : ''}.</small>` : ''; return `<label class="field">${label}<textarea name="${key}" rows="3" maxlength="3000" placeholder="Informe detalhes adicionais, se necessário" ${locked} style="resize:none;overflow-y:auto;${lockedStyle}">${esc(value)}</textarea>${createdInfo}</label>`; }
   if (source === 'OPTIONAL' || source === 'OPTIONAL_EMAIL') return `<label class="field">${label}<input name="${key}" ${source === 'OPTIONAL_EMAIL' ? 'type="email"' : ''} maxlength="250" value="${esc(value)}" placeholder="Não informado"/></label>`;
   if (source === 'DATE_OPTIONAL') return `<label class="field">${label}<input type="date" name="${key}" value="${esc(value)}"/></label>`;
   if (source === 'DATE_REQUIRED') return `<label class="field">${label}<input type="date" name="${key}" value="${esc(value)}" required/></label>`;
@@ -85,13 +121,34 @@ function field([key, label, source], record) {
   if (source === 'PASSWORD_REQUIRED') return `<label class="field">${label}<input type="text" name="${key}" value="${esc(value)}" required maxlength="250" autocomplete="off"/></label>`;
   if (key === 'quantidade') return `<label class="field">${label}<input type="number" name="${key}" required min="0" step="1" value="${esc(value)}" placeholder="0"/></label>`;
   if (source === 'USER') return `<label class="field">${label}<select name="${key}" required><option value="">Selecione</option>${state.users.map(user => `<option ${user.nome === value ? 'selected' : ''}>${esc(user.nome)}</option>`).join('')}</select></label>`;
+  if (source === 'RAMAL_SECTOR') { const existing = state.records.filter(item => item.setor).map(item => item.setor); const options = [...new Set([...RAMAL_SECTORS, ...existing])].sort((a, b) => a.localeCompare(b, 'pt-BR')); return `<label class="field">${label}<select name="${key}" required><option value="">Selecione o setor</option>${options.map(option => `<option ${option === value ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></label>`; }
   if (source === 'TECHNICIAN') return `<label class="field">${label}<select name="${key}"><option value="">Ainda não assumida</option>${state.users.filter(user => user.perfil === 'admin').map(user => `<option ${user.nome === value ? 'selected' : ''}>${esc(user.nome)}</option>`).join('')}</select></label>`;
   if (key === 'ip') return `<label class="field">${label}<input name="ip" required inputmode="decimal" maxlength="45" value="${esc(value)}" placeholder="Ex.: 192.168.1.25" title="Informe um endereço IPv4 ou IPv6 válido."/></label>`;
   if (key === 'patrimonio') return `<label class="field">${label}<input name="patrimonio" required maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9._/-]{1,49}" value="${esc(value)}" placeholder="Ex.: PC-0048" oninput="this.value=this.value.toUpperCase()" title="Use letras, números, ponto, hífen, sublinhado ou barra."/></label>`;
   const options = source === 'DEMAND_STATUS' ? state.statuses : source === 'COMPUTER_GROUP' ? state.computerGroups : source.split(',');
   return `<label class="field">${label}${source.includes(',') || source === 'DEMAND_STATUS' || source === 'COMPUTER_GROUP' ? `<select name="${key}" required><option value="">Selecione</option>${options.map(option => `<option ${option === value ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>` : `<input name="${key}" required value="${esc(value)}" placeholder="${esc(source)}"/>`}</label>`;
 }
-function modal() { if (!state.modal) return ''; if (state.modal.type === 'record') { const resource = state.modal.resource, record = state.modal.record, module = modules[resource]; return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-wide" onsubmit="saveRecord(event,'${resource}','${record?.id || ''}')"><div class="modal-header"><h2>${record ? 'Editar' : 'Novo cadastro'} · ${module.name}</h2><button type="button" class="close" onclick="closeModal()">×</button></div>${resource === 'computadores' ? '<p class="modal-intro">Cadastre o IP para localizar a máquina na rede. As datas são opcionais e registram o ciclo de solicitação, entrega e devolução.</p>' : ''}<div class="two-col">${module.fields.map(item => field(item, record)).join('')}</div>${resource === 'computadores' ? `<fieldset class="checklist"><legend>Checklist do kit entregue</legend><div class="checklist-grid">${KIT.map(item => `<label class="check-item"><input type="checkbox" name="checklist" value="${item}" ${(record?.checklist || []).includes(item) ? 'checked' : ''}/><span>✓</span>${item}</label>`).join('')}</div></fieldset>` : ''}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar</button></div></form></div>`; }
+function demandModal(record) {
+  const demandField = (key, label) => { const definition = modules.demandas.fields.find(item => item[0] === key); return field([key, label || definition[1], definition[2]], record); };
+  const requester = record?.solicitante || state.user?.nome || '';
+  return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-wide demand-modal" onsubmit="saveRecord(event,'demandas','${record?.id || ''}')"><div class="modal-header"><h2>${record ? 'Editar demanda' : 'Criar nova demanda'}</h2><button type="button" class="close" onclick="closeModal()">×</button></div><input type="hidden" name="solicitante" value="${esc(requester)}"/><div class="demand-form"><section class="demand-form-section demand-summary">${demandField('titulo', 'Resumo')}</section><section class="demand-form-row"><div>${demandField('categoria', 'Categoria')}${demandField('outroDetalhe', 'Informe o que é')}</div><div>${demandField('tipo', 'Tipo')}</div></section><section class="demand-form-section demand-description">${demandField('descricao', 'Descrição')}</section><section class="demand-form-row demand-assignment"><div>${demandField('tecnicoResponsavel', 'Responsável')}</div><div>${demandField('prioridade', 'Prioridade')}</div></section><section class="demand-form-section demand-status">${demandField('status', 'Status')}</section></div><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">${record ? 'Salvar alterações' : 'Criar demanda'}</button></div></form></div>`;
+}
+function demandDetailsModal(record) {
+  const interactions = record.interacoes || [];
+  const information = [
+    ['Status', tag(record.status), true],
+    ['Responsável', record.tecnicoResponsavel || 'Não atribuído'],
+    ['Solicitante', record.solicitante || 'Não informado'],
+    ['Tipo', record.tipo === 'interna' ? 'Interna (T.I.)' : record.tipo === 'externa' ? 'Hospital' : 'Não informado'],
+    ['Categoria', record.categoria || 'Não informada'],
+    ['Subcategoria / assunto', record.assunto || 'Não informado'],
+    ...(record.outroDetalhe ? [['Detalhe informado', record.outroDetalhe]] : []),
+    ['Prioridade', tag(record.prioridade), true],
+    ['Criado em', formatDate(record.createdAt)]
+  ].map(([label, value, html]) => `<div><dt>${esc(label)}</dt><dd>${html ? value : esc(value)}</dd></div>`).join('');
+  return `<div class="modal-backdrop" onclick="closeBack(event)"><section class="modal ticket-details-modal"><div class="modal-header ticket-details-head"><div><span class="ticket-reference">${esc(record.ticket || 'Chamado')}</span><h2>${esc(record.titulo)}</h2></div><button type="button" class="close" onclick="closeModal(true)">×</button></div><div class="ticket-details-layout"><main><section class="ticket-description"><h3>Descrição enviada pelo solicitante</h3><p>${esc(record.descricao || 'Nenhuma descrição informada.').replace(/\n/g, '<br/>')}</p></section><section class="ticket-activity"><h3>Atividade</h3><div class="ticket-conversation">${interactions.length ? interactions.map(item => `<article class="ticket-comment ${item.autorId === state.user.id ? 'mine' : ''}"><div class="comment-avatar">${esc((item.autorNome || 'U').slice(0, 2).toUpperCase())}</div><div><header><b>${esc(item.autorNome || 'Usuário')}</b><time>${formatDate(item.criadoEm)}</time></header><p>${esc(item.texto).replace(/\n/g, '<br/>')}</p></div></article>`).join('') : '<div class="ticket-no-comments">Ainda não há comentários. Envie a primeira resposta abaixo.</div>'}</div><form class="ticket-reply" onsubmit="sendDemandComment(event,'${record.id}')"><textarea name="text" required maxlength="3000" rows="3" placeholder="Adicionar comentário..."></textarea><button class="primary">Responder</button></form></section></main><aside class="ticket-information"><h3>Informações da demanda</h3><dl>${information}</dl>${canUpdate('demandas') && !record.tecnicoResponsavel && !/conclu|finaliz|resolvid|encerr/i.test(String(record.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')) ? `<button class="primary ticket-assume" onclick="assignDemandToMe('${record.id}')">Assumir chamado</button>` : ''}${canUpdate('demandas') ? `<button class="secondary ticket-edit" onclick="openRecord('demandas','${record.id}')">Editar chamado</button>` : ''}</aside></div></section></div>`;
+}
+function modal() { if (!state.modal) return ''; if (state.modal.type === 'demand-details') return demandDetailsModal(state.modal.record); if (state.modal.type === 'record') { const resource = state.modal.resource, record = state.modal.record, module = modules[resource]; if (resource === 'demandas') return demandModal(record); return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-wide" onsubmit="saveRecord(event,'${resource}','${record?.id || ''}')"><div class="modal-header"><h2>${record ? 'Editar' : 'Novo cadastro'} · ${module.name}</h2><button type="button" class="close" onclick="closeModal()">×</button></div>${resource === 'computadores' ? '<p class="modal-intro">Cadastre o IP para localizar a máquina na rede. As datas são opcionais e registram o ciclo de solicitação, entrega e devolução.</p>' : ''}<div class="two-col">${module.fields.map(item => field(item, record)).join('')}</div>${resource === 'computadores' ? `<fieldset class="checklist"><legend>Checklist do kit entregue</legend><div class="checklist-grid">${KIT.map(item => `<label class="check-item"><input type="checkbox" name="checklist" value="${item}" ${(record?.checklist || []).includes(item) ? 'checked' : ''}/><span>✓</span>${item}</label>`).join('')}</div></fieldset>` : ''}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar</button></div></form></div>`; }
   if (state.modal.type === 'pre-registration') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="savePreRegistration(event)"><div class="modal-header"><h2>Pré-cadastro de colaborador</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">A pessoa fará o primeiro acesso usando primeiro nome e CPF. Depois completará os próprios dados e aguardará sua ativação.</p><label class="field">Nome completo<input name="nome" required maxlength="120"/></label><label class="field">CPF<input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"/></label><label class="field">Setor<input name="setor" required maxlength="120" placeholder="Ex.: Auditoria Faturamento"/></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Criar pré-cadastro</button></div></form></div>`;
   if (state.modal.type === 'computer-groups') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="saveComputerGroups(event)"><div class="modal-header"><h2>Grupos de computadores</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">Cadastre os grupos que organizam as máquinas, como Faturamento, Eletivas e Laboratório. Grupos em uso não podem ser removidos.</p><div id="group-fields">${state.computerGroups.map(group => `<label class="status-editor"><input name="group" value="${esc(group)}" required maxlength="50"/><button type="button" onclick="this.parentElement.remove()">×</button></label>`).join('')}</div><button type="button" class="secondary" onclick="addComputerGroup()">+ Adicionar grupo</button><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar grupos</button></div></form></div>`;
   if (state.modal.type === 'statuses') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="saveStatuses(event)"><div class="modal-header"><h2>Status das demandas</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">Edite as colunas. Status com demandas não podem ser removidos.</p><div id="status-fields">${state.statuses.map(status => `<label class="status-editor"><input name="status" value="${esc(status)}" required maxlength="50"/><button type="button" onclick="this.parentElement.remove()">×</button></label>`).join('')}</div><button type="button" class="secondary" onclick="addStatus()">+ Adicionar status</button><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar status</button></div></form></div>`;
@@ -100,14 +157,88 @@ function modal() { if (!state.modal) return ''; if (state.modal.type === 'record
   if (state.modal.type === 'mail-read') { const message = state.messages.find(item => item.id === state.modal.messageId); if (!message) return ''; const mine = state.user.id, trashed = (message.recipient.id === mine && message.recipientDeletedAt) || (message.sender.id === mine && message.senderDeletedAt); const canReply = message.sender.id !== mine && !trashed; return `<div class="modal-backdrop" onclick="closeBack(event)"><section class="modal modal-wide mail-message-modal"><div class="modal-header"><div><h2>${esc(message.subject)}</h2><p class="modal-intro">${message.sender.id === mine ? `Para: ${esc(message.recipient.nome)}` : `De: ${esc(message.sender.nome)}`} · ${formatDate(message.createdAt)}</p></div><button type="button" class="close" onclick="closeModal(true)">×</button></div><article class="mail-body">${esc(message.body).replace(/\n/g, '<br/>')}</article><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal(true)">Fechar</button>${canReply ? `<button type="button" class="secondary" onclick="replyMail('${message.id}')">↩ Responder</button>` : ''}${trashed ? '' : `<button type="button" class="danger-link" onclick="deleteMail('${message.id}')">Mover para apagadas</button>`}</div></section></div>`; }
   if (state.modal.type === 'permissions') { const target = state.modal.user, permissions = target.permissions || {}; return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-permissions" onsubmit="savePermissions(event,'${target.id}')"><div class="modal-header"><div><h2>Permissões de ${esc(target.nome)}</h2><p class="modal-intro">Marque exatamente o que este usuário pode fazer.</p></div><button type="button" class="close" onclick="closeModal()">×</button></div>${permissionTable(permissions)}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar permissões</button></div></form></div>`; }
   return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-permissions" onsubmit="saveUser(event)"><div class="modal-header"><h2>Novo usuário</h2><button type="button" class="close" onclick="closeModal()">×</button></div><div class="two-col"><label class="field">Nome<input name="nome" required/></label><label class="field">E-mail<input name="email" type="email" required/></label><label class="field">Perfil<select name="perfil"><option value="consulta">Consulta</option><option value="ti">Equipe de TI</option><option value="admin">Administrador</option></select></label><label class="field">Senha inicial<input name="senha" type="password" required minlength="12"/></label></div>${permissionTable({})}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Criar usuário</button></div></form></div>`; }
-function loginPage() { if (state.firstAccess?.token) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="completeFirstAccess(event)"><h2>Complete seu cadastro</h2><p>Olá, <b>${esc(state.firstAccess.nome)}</b>. Informe seus dados e crie sua senha.</p><label class="field">Data de nascimento<input name="dataNascimento" type="date" required/></label><label class="field">E-mail<input name="email" type="email" required/></label><label class="field">Login<input name="login" required minlength="3" maxlength="50" placeholder="Ex.: suseli"/></label><label class="field">Senha<input name="senha" type="password" required minlength="12"/></label><button class="primary">Concluir cadastro</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.firstAccess) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="identifyFirstAccess(event)"><h2>Primeiro acesso</h2><p>Informe seu primeiro nome e CPF para localizar seu pré-cadastro.</p><label class="field">Primeiro nome<input name="nome" required maxlength="60"/></label><label class="field">CPF<input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"/></label><button class="primary">Validar dados</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.pending) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="verifyCode(event)"><h2>Confirme seu acesso</h2><p>Enviamos um código de seis dígitos para <b>${esc(state.pending.email)}</b>.</p><label class="field">Código<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus/></label><button class="primary">Validar e entrar</button><button type="button" class="login-back" onclick="cancelCode()">Voltar</button></form></section></div>`; return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><div class="login-copy"><h1>Suporte Revitalite</h1><p>Equipe de Tecnologia da Informação</p></div></section><section class="login-panel"><form class="login-card" onsubmit="authenticate(event)"><h2>Boas-vindas</h2><p>Entre com suas credenciais.</p><label class="field">E-mail ou login<input name="email" required autocomplete="username"/></label><label class="field">Senha<input name="password" type="password" required autocomplete="current-password"/></label><button class="primary">Entrar na plataforma</button><button type="button" class="login-back" onclick="startFirstAccess()">Primeiro acesso</button></form></section></div>`; }
+function standardLoginPage() {
+  const passwordStep = state.loginStep === 'password';
+  const form = passwordStep
+    ? `<form class="login-card" onsubmit="authenticate(event)"><h2>Informe sua senha</h2><p>Acessando como <b>${esc(state.loginIdentifier)}</b>.</p><input type="hidden" name="email" value="${esc(state.loginIdentifier)}"/><label class="field">Senha<input name="password" type="password" required autocomplete="current-password" autofocus/></label><button class="primary">Entrar na plataforma</button><button type="button" class="login-back" onclick="backToLoginIdentifier()">Voltar</button></form>`
+    : `<form class="login-card" onsubmit="continueLogin(event)"><h2>Boas-vindas</h2><p>Informe seu e-mail ou login para continuar.</p><label class="field">E-mail ou login<input name="email" required autocomplete="username" value="${esc(state.loginIdentifier)}" autofocus/></label><button class="primary">Continuar</button><button type="button" class="login-back" onclick="startFirstAccess()">Primeiro acesso</button></form>`;
+  return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><div class="login-copy"><h1>Suporte Revitalite</h1><p>Equipe de Tecnologia da Informação</p></div></section><section class="login-panel">${form}</section></div>`;
+}
+function loginPage() { if (state.firstAccess?.token) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="completeFirstAccess(event)"><h2>Complete seu cadastro</h2><p>Olá, <b>${esc(state.firstAccess.nome)}</b>. Informe seus dados e crie sua senha.</p><label class="field">Data de nascimento<input name="dataNascimento" type="date" required/></label><label class="field">E-mail<input name="email" type="email" required/></label><label class="field">Login<input name="login" required minlength="3" maxlength="50" placeholder="Ex.: suseli"/></label><label class="field">Senha<input name="senha" type="password" required minlength="12"/></label><button class="primary">Concluir cadastro</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.firstAccess) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="identifyFirstAccess(event)"><h2>Primeiro acesso</h2><p>Informe seu primeiro nome e CPF para localizar seu pré-cadastro.</p><label class="field">Primeiro nome<input name="nome" required maxlength="60"/></label><label class="field">CPF<input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"/></label><button class="primary">Validar dados</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.pending) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="verifyCode(event)"><h2>Confirme seu acesso</h2><p>Enviamos um código de seis dígitos para <b>${esc(state.pending.email)}</b>.</p><label class="field">Código<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus/></label><button class="primary">Validar e entrar</button><button type="button" class="login-back" onclick="cancelCode()">Voltar</button></form></section></div>`; return standardLoginPage(); }
 function passwordPage() { return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><div class="login-copy"><h1>Proteja seu acesso.</h1><p>Antes de usar o sistema, defina uma senha pessoal e segura.</p></div></section><section class="login-panel"><form class="login-card" onsubmit="changeOwnPassword(event)"><h2>Troca obrigatória de senha</h2><p>Use 8+ caracteres, maiúscula, minúscula, número e símbolo.</p><label class="field">Senha atual<input name="currentPassword" type="password" required autofocus/></label><label class="field">Nova senha<input name="newPassword" type="password" required minlength="8"/></label><button class="primary">Salvar senha e entrar</button></form></section></div>`; }
-function render() { if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); return; } const page = state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${state.loading ? '<div class="loading">Atualizando dados…</div>' : page}</main></div>${modal()}`; }
+function render() { if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); return; } const page = state.loading ? '<div class="loading">Atualizando dados…</div>' : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; }
 function unreadCount(messages) { return messages.filter(message => message.recipient?.id === state.user?.id && !message.readAt && !message.recipientDeletedAt).length; }
-async function refreshUnreadMessages(renderWhenChanged = false) { if (!state.token || !state.user) return; try { const mail = await api('/api/messages'); const unread = unreadCount(mail.messages || []); if (state.unreadMessages !== unread) { state.unreadMessages = unread; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); } } catch (_) { /* A atualização do aviso não deve interromper a tela atual. */ } }
-async function load() { state.loading = true; render(); try { if (state.page === 'dashboard') { state.dashboard = await api('/api/dashboard'); state.unreadMessages = state.dashboard.inbox || 0; } else if (state.page === 'demandas') { const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), api('/api/users')]); state.records = records.records; state.statuses = statuses.statuses; state.users = users.users; } else if (state.page === 'relatorios') { const params = new URLSearchParams(); if (state.start) params.set('start', state.start); if (state.end) params.set('end', state.end); state.report = await api(`/api/reports?${params}`); } else if (state.page === 'email') { const [mail, users] = await Promise.all([api('/api/messages'), api('/api/users')]); state.messages = mail.messages; state.users = users.users; state.unreadMessages = unreadCount(state.messages); } else if (state.page === 'usuarios') state.users = (await api('/api/users')).users; else { const [records, users] = await Promise.all([api(`/api/resources/${state.page}`), api('/api/users')]); state.records = records.records; state.users = users.users; } } catch (error) { toast(error.message); } finally { state.loading = false; render(); } }
-async function go(page) { state.page = page; state.query = ''; state.modal = null; if (page === 'demandas-internas' || page === 'demandas-externas') { state.loading = true; render(); try { const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), api('/api/users')]); state.records = records.records; state.statuses = statuses.statuses; state.users = users.users; } catch (error) { toast(error.message); } finally { state.loading = false; render(); } return; } if (page === 'localizacao') { state.loading = true; render(); try { state.locations = await api('/api/locations/computadores'); } catch (error) { toast(error.message); } finally { state.loading = false; render(); } return; } load(); }
-function setSearch(value) { state.query = value; render(); $('.search')?.focus(); }
+async function refreshUnreadMessages(renderWhenChanged = false) { if (!state.token || !state.user) return false; try { const mail = await api('/api/messages'); const unread = unreadCount(mail.messages || []); const changed = state.unreadMessages !== unread; if (changed) { state.unreadMessages = unread; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); } return changed; } catch (_) { return false; /* A atualização do aviso não deve interromper a tela atual. */ } }
+function dataSnapshot() { return JSON.stringify({ dashboard: state.dashboard, records: state.records, users: state.users, messages: state.messages, report: state.report, statuses: state.statuses, locations: state.locations, unreadMessages: state.unreadMessages }); }
+async function load(options = {}) {
+  const silent = Boolean(options.silent);
+  const requestId = options.requestId ?? navigationRequest;
+  const requestedPage = state.page;
+  const before = silent ? dataSnapshot() : '';
+  const isCurrentRequest = () => requestId === navigationRequest && requestedPage === state.page;
+
+  if (!silent) {
+    state.loading = true;
+    render();
+  }
+
+  try {
+    if (requestedPage === 'dashboard') {
+      const dashboard = await api('/api/dashboard');
+      if (!isCurrentRequest()) return;
+      state.dashboard = dashboard;
+      state.unreadMessages = dashboard.inbox || 0;
+    } else if (requestedPage === 'demandas' || requestedPage.startsWith('demandas-')) {
+      const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), api('/api/users')]);
+      if (!isCurrentRequest()) return;
+      state.records = records.records;
+      state.statuses = statuses.statuses;
+      state.users = users.users;
+    } else if (requestedPage === 'relatorios') {
+      const params = new URLSearchParams();
+      if (state.start) params.set('start', state.start);
+      if (state.end) params.set('end', state.end);
+      const report = await api(`/api/reports?${params}`);
+      if (!isCurrentRequest()) return;
+      state.report = report;
+    } else if (requestedPage === 'email') {
+      const [mail, users] = await Promise.all([api('/api/messages'), api('/api/users')]);
+      if (!isCurrentRequest()) return;
+      state.messages = mail.messages;
+      state.users = users.users;
+      state.unreadMessages = unreadCount(state.messages);
+    } else if (requestedPage === 'usuarios') {
+      const users = await api('/api/users');
+      if (!isCurrentRequest()) return;
+      state.users = users.users;
+    } else if (requestedPage === 'localizacao') {
+      const locations = await api('/api/locations/computadores');
+      if (!isCurrentRequest()) return;
+      state.locations = locations;
+    } else {
+      const [records, users] = await Promise.all([api(`/api/resources/${requestedPage}`), api('/api/users')]);
+      if (!isCurrentRequest()) return;
+      state.records = records.records;
+      state.users = users.users;
+    }
+  } catch (error) {
+    if (isCurrentRequest()) toast(error.message);
+  } finally {
+    if (!isCurrentRequest()) return;
+    if (!silent) {
+      state.loading = false;
+      render();
+    } else if (before !== dataSnapshot()) render();
+  }
+}
+async function go(page) {
+  const requestId = ++navigationRequest;
+  state.page = page;
+  state.query = '';
+  state.modal = null;
+  await load({ requestId });
+}
+function setSearch(value) { state.query = value; render(); const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
 function setProgramFilter(field, value) { state[field] = value; render(); }
 function setResourceFilter(resource, key, value) { state.resourceFilters[`${resource}-${key}`] = value; render(); }
 function setPeriod(start, end) { state.start = start; state.end = end; load(); }
@@ -120,11 +251,65 @@ function openRecord(resource, id = '') {
   if (resource === 'computadores') api('/api/computer-groups').then(result => { if (state.modal?.type === 'record' && state.modal.resource === 'computadores' && !state.formDirty) { state.computerGroups = result.groups; render(); addObservationField(); } }).catch(error => toast(error.message));
 }
 function openDemand(type) { state.newDemandType = type; openRecord('demandas'); state.newDemandType = type; render(); addObservationField(); }
+async function openDemandDetails(id) {
+  try {
+    const result = await api(`/api/resources/demandas/${id}`);
+    const record = result.records?.[0];
+    if (!record) return toast('Chamado não encontrado.');
+    state.modal = { type: 'demand-details', record };
+    state.formDirty = false;
+    render();
+  } catch (error) { toast(error.message); }
+}
+async function sendDemandComment(event, id) {
+  event.preventDefault();
+  const form = event.target;
+  const text = new FormData(form).get('text')?.trim();
+  if (!text) return;
+  const button = form.querySelector('button');
+  button.disabled = true;
+  try {
+    await api(`/api/resources/demandas/${id}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
+    await openDemandDetails(id);
+    await refreshUnreadMessages(true);
+    toast('Resposta enviada e participantes notificados.');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message);
+  }
+}
+async function assignDemandToMe(id) {
+  const button = document.querySelector('.ticket-assume');
+  if (button) button.disabled = true;
+  try {
+    await api(`/api/resources/demandas/${id}/assign-self`, { method: 'PUT', body: '{}' });
+    await openDemandDetails(id);
+    toast('Chamado atribuído a você.');
+  } catch (error) {
+    if (button) button.disabled = false;
+    toast(error.message);
+  }
+}
+function updateDemandCategory(select) {
+  const form = select.closest('form');
+  const option = select.selectedOptions[0];
+  const category = option?.dataset.category || '';
+  const categoryInput = form.querySelector('input[name="categoria"]');
+  const otherField = form.querySelector('.demand-other');
+  const other = otherField?.querySelector('input');
+
+  if (categoryInput) categoryInput.value = category;
+  otherField?.classList.toggle('hidden', category !== 'Outros');
+  if (other) {
+    other.required = category === 'Outros';
+    if (category !== 'Outros') other.value = '';
+  }
+}
 function addObservationField() {
   const form = document.querySelector('form.modal');
   if (!form || form.querySelector('.observations-field')) return;
   const demand = state.modal?.resource === 'demandas';
-  if (demand && !state.modal?.record && state.user?.perfil !== 'admin') return;
+  if (demand && !state.modal?.record) return;
   const field = document.createElement('section');
   field.className = 'observations-field';
   if (demand) {
@@ -158,14 +343,54 @@ function closeModal(force = false) { if (!force && state.formDirty && !confirm('
 function closeBack(event) { /* O fundo do modal não fecha formulários: evita perda de dados digitados. */ }
 async function saveRecord(event, resource, id) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); const observation = event.target.querySelector('[name="novaObservacao"]'); if (observation) data.novaObservacao = observation.value.trim(); if (resource === 'computadores') data.checklist = form.getAll('checklist'); try { await api(`/api/resources/${resource}${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(data) }); closeModal(true); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast('Cadastro salvo.'); } catch (error) { toast(error.message); } }
 async function deleteRecord(resource, id) { if (!confirm('Excluir este registro?')) return; try { await api(`/api/resources/${resource}/${id}`, { method: 'DELETE' }); await load(); toast('Registro excluído.'); } catch (error) { toast(error.message); } }
-function dragDemand(event, id) { event.dataTransfer.setData('demandId', id); }
-async function dropDemand(event, status) { event.preventDefault(); await moveDemand(event.dataTransfer.getData('demandId'), status); }
-async function moveDemand(id, status) { const demand = state.records.find(record => record.id === id); if (!demand || demand.status === status) return; try { await api(`/api/resources/demandas/${id}`, { method: 'PUT', body: JSON.stringify({ ...demand, status }) }); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast(`Demanda movida para ${status}.`); } catch (error) { toast(error.message); } }
+let activeDraggedBoard = null;
+let dragPointerX = null;
+let dragScrollFrame = null;
+function dragDemand(event, id) {
+  event.dataTransfer.setData('demandId', id);
+  activeDraggedBoard = event.currentTarget.closest('.kanban');
+  dragPointerX = event.clientX;
+  startKanbanAutoScroll();
+}
+function autoScrollKanban(event, board = activeDraggedBoard) {
+  if (!board) return;
+  activeDraggedBoard = board;
+  if (event.clientX) dragPointerX = event.clientX;
+  startKanbanAutoScroll();
+}
+function startKanbanAutoScroll() {
+  if (dragScrollFrame || !activeDraggedBoard) return;
+  const scroll = () => {
+    dragScrollFrame = null;
+    const board = activeDraggedBoard;
+    if (!board || dragPointerX === null) return;
+    const bounds = board.getBoundingClientRect();
+    const edge = Math.min(150, bounds.width * 0.22);
+    const leftDistance = dragPointerX - bounds.left;
+    const rightDistance = bounds.right - dragPointerX;
+    let horizontal = 0;
+
+    if (leftDistance < edge) horizontal = -Math.min(28, Math.max(5, Math.ceil((edge - leftDistance) / 3)));
+    else if (rightDistance < edge) horizontal = Math.min(28, Math.max(5, Math.ceil((edge - rightDistance) / 3)));
+
+    if (horizontal) board.scrollLeft += horizontal;
+    dragScrollFrame = requestAnimationFrame(scroll);
+  };
+  dragScrollFrame = requestAnimationFrame(scroll);
+}
+function stopKanbanAutoScroll() {
+  activeDraggedBoard = null;
+  dragPointerX = null;
+  if (dragScrollFrame) cancelAnimationFrame(dragScrollFrame);
+  dragScrollFrame = null;
+}
+async function dropDemand(event, status) { event.preventDefault(); const demandId = event.dataTransfer.getData('demandId'); stopKanbanAutoScroll(); await moveDemand(demandId, status); }
+async function moveDemand(id, status) { const demand = state.records.find(record => record.id === id); if (!demand || demand.status === status) return; if (!demand.tecnicoResponsavel) { await openDemandDetails(id); return toast('Veja as informações e assuma o chamado antes de alterar o status.'); } try { await api(`/api/resources/demandas/${id}`, { method: 'PUT', body: JSON.stringify({ ...demand, status }) }); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast(`Demanda movida para ${status}.`); } catch (error) { toast(error.message); } }
 async function saveStatuses(event) { event.preventDefault(); const statuses = new FormData(event.target).getAll('status').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/demand-statuses', { method: 'PUT', body: JSON.stringify({ statuses }) }); state.statuses = result.statuses; closeModal(true); await load(); toast('Status atualizados.'); } catch (error) { toast(error.message); } }
 async function saveComputerGroups(event) { event.preventDefault(); const groups = new FormData(event.target).getAll('group').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/computer-groups', { method: 'PUT', body: JSON.stringify({ groups }) }); state.computerGroups = result.groups; closeModal(true); toast('Grupos atualizados.'); } catch (error) { toast(error.message); } }
 async function sendMail(event) { event.preventDefault(); try { await api('/api/messages', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Mensagem enviada.'); } catch (error) { toast(error.message); } }
 function setMailFolder(folder) { state.mailFolder = folder; state.selectedMessageId = null; state.mailQuery = ''; render(); }
-function setMailSearch(value) { state.mailQuery = value; state.selectedMessageId = null; render(); document.querySelector('.mail-list-tools input')?.focus(); }
+function setMailSearch(value) { state.mailQuery = value; state.selectedMessageId = null; render(); const input = document.querySelector('.mail-list-tools input'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
 async function readMessage(id) { const message = state.messages.find(item => item.id === id); if (message?.recipient.id === state.user.id && !message.readAt) { try { await api(`/api/messages/${id}/read`, { method: 'PUT' }); message.readAt = new Date().toISOString(); state.unreadMessages = unreadCount(state.messages); } catch (error) { toast(error.message); } } state.modal = { type: 'mail-read', messageId: id }; render(); }
 async function deleteMail(id) { if (!confirm('Mover esta mensagem para Apagadas?')) return; try { await api(`/api/messages/${id}`, { method: 'DELETE' }); closeModal(true); await load(); toast('Mensagem movida para Apagadas.'); } catch (error) { toast(error.message); } }
 function collectPermissions(form) { const permissions = {}; for (const resource of Object.keys(modules)) { const list = form.get(`permission-${resource}-list`) === 'on', create = form.get(`permission-${resource}-create`) === 'on', update = form.get(`permission-${resource}-update`) === 'on', consult = form.get(`permission-${resource}-consult`) === 'on', remove = form.get(`permission-${resource}-delete`) === 'on'; if (list || create || update || consult || remove) permissions[resource] = { list, create, update, consult, delete: remove }; } return permissions; }
@@ -182,34 +407,52 @@ function exportResource(resource) { download(`/api/resources/${resource}/export`
 function exportReport() { const query = new URLSearchParams(); if (state.start) query.set('start', state.start); if (state.end) query.set('end', state.end); download(`/api/reports/export?${query}`, 'relatorio-central-ti.csv'); }
 async function finishLogin(result) { state.token = result.token; state.user = result.user; state.pending = null; localStorage.setItem(TOKEN, state.token); const me = await api('/api/me'); state.networkUrls = me.networkUrls || []; load(); }
 async function authenticate(event) { event.preventDefault(); try { const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result.requiresVerification) { state.pending = result; render(); return; } await finishLogin(result); } catch (error) { toast(error.message); } }
-function startFirstAccess() { state.firstAccess = {}; render(); }
-function cancelFirstAccess() { state.firstAccess = null; render(); }
+function flipAuthCard(updateView, backwards = false) {
+  const card = document.querySelector('.login-card');
+  if (!card || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    updateView();
+    render();
+    return;
+  }
+  card.classList.add(backwards ? 'auth-flip-out-back' : 'auth-flip-out');
+  setTimeout(() => {
+    updateView();
+    render();
+    const nextCard = document.querySelector('.login-card');
+    if (!nextCard) return;
+    nextCard.classList.add(backwards ? 'auth-flip-in-back' : 'auth-flip-in');
+    requestAnimationFrame(() => requestAnimationFrame(() => nextCard.classList.remove('auth-flip-in', 'auth-flip-in-back')));
+  }, 360);
+}
+function continueLogin(event) {
+  event.preventDefault();
+  const identifier = String(new FormData(event.target).get('email') || '').trim();
+  if (!identifier) return;
+  flipAuthCard(() => {
+    state.loginIdentifier = identifier;
+    state.loginStep = 'password';
+  });
+}
+function backToLoginIdentifier() {
+  flipAuthCard(() => { state.loginStep = 'identifier'; }, true);
+}
+function startFirstAccess() { flipAuthCard(() => { state.firstAccess = {}; }); }
+function cancelFirstAccess() { flipAuthCard(() => { state.firstAccess = null; state.loginStep = 'identifier'; }, true); }
+function forgotPassword() { toast('Solicite ao administrador da Central TI a redefinição da sua senha.'); }
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  localStorage.setItem('central-ti-sidebar-collapsed', String(sidebarCollapsed));
+  applySidebarChrome();
+}
+function toggleColorTheme() {
+  colorTheme = colorTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('central-ti-theme', colorTheme);
+  applyColorTheme();
+}
 async function identifyFirstAccess(event) { event.preventDefault(); try { state.firstAccess = await api('/api/first-access/identify', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); render(); } catch (error) { toast(error.message); } }
 async function completeFirstAccess(event) { event.preventDefault(); try { await api('/api/first-access/complete', { method: 'POST', body: JSON.stringify({ ...Object.fromEntries(new FormData(event.target)), token: state.firstAccess.token }) }); state.firstAccess = null; render(); toast('Cadastro enviado. Aguarde a ativação do administrador.'); } catch (error) { toast(error.message); } }
 async function verifyCode(event) { event.preventDefault(); try { const result = await api('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ verificationToken: state.pending.verificationToken, code: new FormData(event.target).get('code') }) }); await finishLogin(result); } catch (error) { toast(error.message); } }
 function cancelCode() { state.pending = null; render(); }
-async function logout() { try { await api('/api/auth/logout', { method: 'POST' }); } catch {} state.token = null; state.user = null; state.pending = null; localStorage.removeItem(TOKEN); render(); }
+async function logout() { try { await api('/api/auth/logout', { method: 'POST' }); } catch {} state.token = null; state.user = null; state.pending = null; state.loginStep = 'identifier'; state.loginIdentifier = ''; localStorage.removeItem(TOKEN); render(); }
 function toast(message) { $('.toast')?.remove(); const toastElement = document.createElement('div'); toastElement.className = 'toast'; toastElement.textContent = message; document.body.append(toastElement); setTimeout(() => toastElement.remove(), 3500); }
 async function boot() { if (!state.token) return render(); try { const me = await api('/api/me'); state.user = me.user; state.networkUrls = me.networkUrls || []; load(); } catch { state.token = null; localStorage.removeItem(TOKEN); render(); } }
-document.addEventListener('input', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
-document.addEventListener('change', event => { if (event.target.closest('.modal form')) state.formDirty = true; });
-document.addEventListener('dblclick', event => { const card = event.target.closest('.demand-card'); if (!card || event.target.closest('select')) return; const match = card.getAttribute('ondragstart')?.match(/'([^']+)'/); if (match) openRecord('demandas', match[1]); });
-function applyPasswordMinimum() { document.querySelectorAll('input[name="senha"], input[name="newPassword"]').forEach(input => { input.minLength = 8; }); }
-new MutationObserver(applyPasswordMinimum).observe(document.body, { childList: true, subtree: true });
-applyPasswordMinimum();
-function injectResourceFilters() { if (state.loading || !moduleFilters[state.page]?.length) return; const toolbar = document.querySelector('.section-toolbar'); const actions = toolbar?.querySelector('.toolbar-actions'); if (!toolbar || !actions || toolbar.querySelector('.generated-module-filters')) return; const box = document.createElement('span'); box.className = 'generated-module-filters'; for (const [key, label] of moduleFilters[state.page]) { const values = [...new Set(state.records.map(record => record[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR')); if (!values.length) continue; const select = document.createElement('select'); select.innerHTML = `<option value="">${key === 'periodicidade' ? 'Mensal e anual' : `Todos os ${label.toLowerCase()}`}</option>${values.map(value => `<option ${state.resourceFilters[`${state.page}-${key}`] === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}`; select.onchange = () => setResourceFilter(state.page, key, select.value); box.append(select); } toolbar.insertBefore(box, actions); }
-new MutationObserver(injectResourceFilters).observe($('#app'), { childList: true, subtree: true });
-function injectProgramCosts() {
-  if (state.loading || state.page !== 'relatorios' || !state.report) return;
-  const metrics = document.querySelector('.report-actions + .metrics');
-  if (!metrics || metrics.querySelector('.program-cost-metric')) return;
-  const costs = state.report.programCosts || {};
-  for (const [label, value] of [['Custo mensal estimado', costs.monthlyEquivalent], ['Custo anual estimado', costs.annualEquivalent]]) {
-    const card = document.createElement('div'); card.className = 'metric program-cost-metric';
-    card.innerHTML = `<div class="metric-name">${label}</div><div class="metric-number">${formatCurrency(value)}</div>`;
-    metrics.append(card);
-  }
-}
-new MutationObserver(injectProgramCosts).observe($('#app'), { childList: true, subtree: true });
-setInterval(() => { if (state.token && state.user && !state.modal && !state.formDirty && !state.loading) refreshUnreadMessages(true); if (state.token && state.user && !state.modal && !state.formDirty && !state.loading && state.page !== 'localizacao') load(); }, 15000);
-boot();

@@ -15,10 +15,19 @@ Abra `http://localhost:3000` no navegador.
 ## Estrutura do projeto
 
 ```text
-public/     Telas, JavaScript do navegador e estilos
-server/     Servidor, autenticação, regras e APIs
-storage/    Dados locais do sistema (não enviados ao GitHub)
-backups/    Cópias de segurança locais (não enviadas ao GitHub)
+public/
+  index.html          Entrada da interface
+  assets/js/          JavaScript do navegador
+  assets/css/         Estilos da interface
+server/
+  core/               Configuração, HTTP, segurança e arquivos estáticos
+  domain/             Definições e regras dos módulos
+  services/           Integrações, como envio de e-mail
+  server.js           Inicialização e rotas ainda não extraídas
+tests/integration/    Testes do servidor e da interface pública
+scripts/              Instalação e manutenção no Windows
+storage/              Dados locais (não enviados ao GitHub)
+backups/              Cópias locais (não enviadas ao GitHub)
 ```
 
 ### Compartilhar na mesma rede
@@ -35,7 +44,17 @@ Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **
 | TI | ti@centralti.local | 123456 |
 | Recepção | recepcao@centralti.local | 123456 |
 
-No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 12 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início. Para uma implantação corporativa, defina a variável de ambiente `DATABASE_URL` com a conexão PostgreSQL antes de iniciar o sistema; ele criará e migrará as tabelas automaticamente. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
+No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início. Para uma implantação corporativa, defina a variável de ambiente `DATABASE_URL` com a conexão PostgreSQL antes de iniciar o sistema; ele criará e migrará as tabelas automaticamente. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
+
+## Scripts para Windows
+
+Os scripts em `scripts/` devem ser executados em PowerShell como administrador:
+
+- `provision-postgres.ps1` prepara o banco PostgreSQL e deve ser revisado separadamente antes do uso em produção.
+- `install-autostart.ps1` cria a tarefa de inicialização automática. Ele nunca encerra um processo desconhecido que esteja usando a porta configurada.
+- `restart-autostart.ps1` reinicia somente a tarefa da Central TI.
+
+Revise os parâmetros antes de executar. Esses scripts alteram serviços e tarefas do Windows e não são necessários para desenvolvimento local.
 
 ## Backup
 

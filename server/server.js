@@ -5,49 +5,29 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const net = require('node:net');
 const { Pool } = require('pg');
-const nodemailer = require('nodemailer');
-const { resourceDefinitions, optionalResourceFields, access, computerChecklist } = require('./resources');
-
-function loadEnvFile() {
-  const envFile = path.join(__dirname, '.env'); if (!fs.existsSync(envFile)) return;
-  for (const line of fs.readFileSync(envFile, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/)) { const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/); if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, ''); }
-}
-loadEnvFile();
-const PORT = Number(process.env.PORT || 3000);
-const HOST = process.env.HOST || '0.0.0.0';
-const ROOT = path.resolve(__dirname, '..');
-const PUBLIC_DIR = path.join(ROOT, 'public');
-const DB_DIR = path.join(ROOT, 'storage');
-const DB_FILE = path.join(DB_DIR, 'central-ti.json');
-const BACKUP_DIR = process.env.BACKUP_DIR || path.join(ROOT, 'backups');
-const DATABASE_URL = process.env.DATABASE_URL;
+const { resourceDefinitions, optionalResourceFields, access, computerChecklist } = require('./domain/resources');
+const config = require('./core/config');
+const { passwordHash, verifyPassword, normalizeCpf, cpfHash, firstName } = require('./core/security');
+const { respond, error, requestBody } = require('./core/http');
+const { createStaticFileHandler } = require('./core/static-files');
+const { createEmailService } = require('./services/email-service');
+const { createSessionService } = require('./services/session-service');
+const { createSeedData } = require('./domain/seed-data');
+const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, TWO_FACTOR_REQUIRED, SMTP_ENABLED } = config;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-const sessions = new Map();
 const verificationChallenges = new Map();
 const firstAccessChallenges = new Map();
-const loginAttempts = new Map();
-const TWO_FACTOR_REQUIRED = process.env.EMAIL_2FA_REQUIRED === 'true';
-const SMTP_ENABLED = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
-const transporter = SMTP_ENABLED ? nodemailer.createTransport({ host: process.env.SMTP_HOST || 'smtp.gmail.com', port: Number(process.env.SMTP_PORT || 465), secure: process.env.SMTP_SECURE !== 'false', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }) : null;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined }) : null;
+const emailService = createEmailService(config);
+const serveFile = createStaticFileHandler(PUBLIC_DIR);
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined }) : null;
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
-function passwordHash(password, salt = crypto.randomBytes(16).toString('hex')) { return { salt, hash: crypto.scryptSync(password, salt, 64).toString('hex') }; }
-function verifyPassword(password, user) { const candidate = passwordHash(String(password), user.salt).hash; return crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(user.hash, 'hex')); }
-function normalizeCpf(value) { const cpf = String(value || '').replace(/\D/g, ''); return /^\d{11}$/.test(cpf) ? cpf : null; }
-function cpfHash(cpf) { return crypto.createHash('sha256').update(cpf).digest('hex'); }
-function firstName(value) { return String(value || '').trim().split(/\s+/)[0].toLocaleLowerCase('pt-BR'); }
 function collaboratorPermissions() { return { demandas: { list: true, create: true, update: false, consult: true, delete: false, scope: 'hospital' }, redes: { list: true, create: false, update: false, consult: true, delete: false }, ramais: { list: true, create: false, update: false, consult: true, delete: false } }; }
 function hospitalOnly(user) { return user.perfil !== 'admin' && Boolean(user.permissions?.demandas); }
-function userSeed(nome, email, perfil, senha) { const { salt, hash } = passwordHash(senha); return { id: id(), nome, email, perfil, active: true, salt, hash, mustChangePassword: true, createdAt: now() }; }
-function initialData() {
-  const admin = userSeed('Administrador', 'admin@centralti.local', 'admin', '123456');
-  const ti = userSeed('Equipe de TI', 'ti@centralti.local', 'ti', '123456');
-  const recepcao = userSeed('Recepção', 'recepcao@centralti.local', 'recepcao', '123456');
-  const record = (data) => ({ id: id(), ...data, createdAt: now(), updatedAt: now() });
-  return { users: [admin, ti, recepcao], computadores: [record({ patrimonio: 'PC-0048', responsavel: 'Mariana Costa', localizacao: 'Financeiro', status: 'Ativo', avaliacao: 'Bom' }), record({ patrimonio: 'PC-0051', responsavel: 'João Victor', localizacao: 'Recepção', status: 'Em manutenção', avaliacao: 'Precisa de manutenção' })], materiais: [record({ item: 'Toner HP 85A', categoria: 'Impressão', quantidade: '8', minimo: '4' }), record({ item: 'Cabo de rede CAT6', categoria: 'Rede', quantidade: '42', minimo: '20' })], recepcoes: [record({ visitante: 'Carlos Mendes', empresa: 'Mendes & Filhos', destino: 'Compras', data: '11/08/2026' })], equipamentos: [record({ equipamento: 'Projetor', modelo: 'Epson PowerLite X49', responsavel: 'Sala de reuniões', condicao: 'Operacional', avaliacao: 'Bom' })], redes: [record({ nome: 'Firewall principal', ip: '192.168.1.1', localizacao: 'Rack TI', status: 'Online' })], patrimonio: [record({ codigo: 'PAT-1022', descricao: 'Mesa de escritório', localizacao: 'Financeiro', situacao: 'Em uso' })], demandas: [record({ titulo: 'Instalar impressora no RH', solicitante: 'Sandra Lima', prioridade: 'Média', status: 'Em andamento' }), record({ titulo: 'Acesso ao sistema financeiro', solicitante: 'Felipe Rocha', prioridade: 'Alta', status: 'Aberta' })], demandStatuses: ['Aberta', 'Em andamento', 'Concluída'], messages: [record({ senderId: ti.id, recipientId: admin.id, subject: 'Bem-vindo à Central TI', body: 'Seu acesso ao painel foi configurado com sucesso.', readAt: null })], auditLogs: [] };
-}
+function canViewAllDemands(user) { return user.perfil === 'admin' || user.perfil === 'ti'; }
+function demandBelongsToUser(record, user) { return canViewAllDemands(user) || record.createdBy === user.id || record.solicitanteId === user.id; }
+function initialData() { return createSeedData({ id, now, passwordHash }); }
 function repairTextEncoding(value) {
   if (typeof value !== 'string' || !/[\u00C3\u00C2\u00E2]/.test(value)) return value;
   const windows1252 = new Map([[0x20AC, 0x80], [0x201A, 0x82], [0x0192, 0x83], [0x201E, 0x84], [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02C6, 0x88], [0x2030, 0x89], [0x0160, 0x8A], [0x2039, 0x8B], [0x0152, 0x8C], [0x017D, 0x8E], [0x2018, 0x91], [0x2019, 0x92], [0x201C, 0x93], [0x201D, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97], [0x02DC, 0x98], [0x2122, 0x99], [0x0161, 0x9A], [0x203A, 0x9B], [0x0153, 0x9C], [0x017E, 0x9E], [0x0178, 0x9F]]);
@@ -185,6 +165,8 @@ const pgStore = {
   ,async setComputerGroups(groups) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(groups)]); return groups; }
 };
 let store = fileStore;
+const sessionService = createSessionService({ getStore: () => store, sessionTtlMs: SESSION_TTL_MS, error });
+const { sessions, tooManyAttempts, recordAttempt, getAuth, createSingleSession, requireAuth } = sessionService;
 
 async function initializePostgres() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE, login TEXT UNIQUE, setor TEXT NOT NULL DEFAULT '', cpf_hash TEXT UNIQUE, cpf_last4 TEXT NOT NULL DEFAULT '', data_nascimento DATE, perfil TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, activation_status TEXT NOT NULL DEFAULT 'ativo', permissions JSONB NOT NULL DEFAULT '{}'::jsonb, salt TEXT NOT NULL, hash TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
@@ -214,27 +196,52 @@ async function initializePostgres() {
   await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(localGroups)]);
   store = pgStore;
 }
-function respond(res, status, data, headers = {}) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', ...headers }); res.end(JSON.stringify(data)); }
-function error(res, status, message) { respond(res, status, { error: message }); }
-function requestBody(req) { return new Promise((resolve, reject) => { let body = ''; req.on('data', chunk => { body += chunk; if (body.length > 1_000_000) { reject(new Error('Payload muito grande')); req.destroy(); } }); req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('JSON inválido')); } }); req.on('error', reject); }); }
-function clientIp(req) { return req.socket.remoteAddress || 'unknown'; }
-function tooManyAttempts(req) { const attempt = loginAttempts.get(clientIp(req)); return attempt && attempt.count >= 8 && Date.now() - attempt.last < 15 * 60 * 1000; }
-function recordAttempt(req, success) { const ip = clientIp(req); if (success) return loginAttempts.delete(ip); const current = loginAttempts.get(ip) || { count: 0, last: 0 }; loginAttempts.set(ip, { count: current.count + 1, last: Date.now() }); }
-async function getAuth(req) { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); const session = token && sessions.get(token); if (!session || session.expiresAt < Date.now()) { if (token) sessions.delete(token); return null; } return store.findUser(session.userId); }
-function createSingleSession(userId) { for (const [token, session] of sessions) if (session.userId === userId) sessions.delete(token); const token = crypto.randomBytes(32).toString('hex'); sessions.set(token, { userId, expiresAt: Date.now() + SESSION_TTL_MS }); return token; }
 function normalizePermissions(rawPermissions) { const permissions = {}; for (const resource of Object.keys(resourceDefinitions)) { const requested = rawPermissions?.[resource]; if (!requested || typeof requested !== 'object') continue; const legacyRead = requested.read !== false; permissions[resource] = { list: requested.list ?? legacyRead, consult: requested.consult ?? legacyRead, create: requested.create ?? requested.write ?? false, update: requested.update ?? requested.write ?? false, delete: Boolean(requested.delete) }; } return permissions; }
 function canAccess(user, resource, mode = 'list') { if (user.perfil === 'admin') return true; const permission = user.permissions?.[resource]; if (permission) { const legacyRead = permission.read !== false; const map = { list: permission.list ?? legacyRead, consult: permission.consult ?? legacyRead, create: permission.create ?? permission.write ?? false, update: permission.update ?? permission.write ?? false, delete: Boolean(permission.delete) }; return Boolean(map[mode]); } if (user.permissions && Object.keys(user.permissions).length) return false; if ((mode === 'list' || mode === 'consult') && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
-async function requireAuth(req, res) { const user = await getAuth(req); if (!user) { error(res, 401, 'Sua sessão expirou. Entre novamente.'); return null; } return user; }
-function sanitize(values, keys) { const item = {}; for (const key of keys) { const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : ''; if (!value || value.length > 250) return null; item[key] = value; } const resource = Object.entries(resourceDefinitions).find(([, fields]) => fields === keys)?.[0]; for (const key of optionalResourceFields[resource] || []) { const value = repairTextEncoding(String(values[key] || '').trim()); if (value.length > 250) return null; item[key] = value; } if (values.observacoes !== undefined) { const observacoes = repairTextEncoding(String(values.observacoes || '').trim()); if (observacoes.length > 5000) return null; item.observacoes = observacoes; } if (resource === 'demandas') { const note = repairTextEncoding(String(values.novaObservacao || '').trim()); if (note.length > 3000) return null; item.novaObservacao = note; if (values.tipo === 'externa') { for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; item[key] = value; } if (!/^\S+@\S+\.\S+$/.test(item.email)) return null; item.tipo = 'externa'; } else item.tipo = 'interna'; } return item; }
+function sanitize(values, keys) {
+  const item = {};
+  for (const key of keys) {
+    const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : '';
+    if (!value || value.length > 250) return null;
+    item[key] = value;
+  }
+  const resource = Object.entries(resourceDefinitions).find(([, fields]) => fields === keys)?.[0];
+  for (const key of optionalResourceFields[resource] || []) {
+    const value = repairTextEncoding(String(values[key] || '').trim());
+    const limit = key === 'descricao' ? 3000 : 250;
+    if (value.length > limit) return null;
+    item[key] = value;
+  }
+  if (values.observacoes !== undefined) {
+    const observacoes = repairTextEncoding(String(values.observacoes || '').trim());
+    if (observacoes.length > 5000) return null;
+    item.observacoes = observacoes;
+  }
+  if (resource === 'demandas') {
+    const note = repairTextEncoding(String(values.novaObservacao || '').trim());
+    if (note.length > 3000) return null;
+    item.novaObservacao = note;
+    if (values.tipo === 'externa') {
+      for (const key of ['empresa', 'contato', 'email', 'descricao']) {
+        const value = repairTextEncoding(String(values[key] || '').trim());
+        if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null;
+        item[key] = value;
+      }
+      if (!/^\S+@\S+\.\S+$/.test(item.email)) return null;
+      item.tipo = 'externa';
+    } else item.tipo = 'interna';
+  }
+  return item;
+}
 const sanitizeOriginal = sanitize;
 sanitize = function (values, keys) {
-  if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local' };
-  if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local' };
+  if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   return sanitizeOriginal(values, keys);
 };
 function sanitizeDemand(values) {
-  if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local' };
+  if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
+  if (!demand.categoria || (demand.categoria === 'Outros' ? !demand.outroDetalhe : !demand.assunto)) return null;
   demand.tipo = values.tipo === 'externa' ? 'externa' : 'interna';
   if (demand.tipo === 'externa') {
     for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; demand[key] = value; }
@@ -245,8 +252,8 @@ function sanitizeDemand(values) {
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeHospitalDemand(values, user) {
   const text = (value, limit = 250) => repairTextEncoding(String(value || '').trim());
-  const demand = { titulo: text(values.titulo), solicitante: user.nome, prioridade: text(values.prioridade), status: 'Aberta', categoria: text(values.categoria), tipo: 'externa', empresa: 'Hospital Dia Revitalite', contato: 'Não informado', email: 'hospital@revitalite.local', descricao: text(values.descricao, 3000), tecnicoResponsavel: '', prazoSla: '', novaObservacao: text(values.novaObservacao, 3000) };
-  if (!demand.titulo || !demand.prioridade || !demand.descricao || Object.values(demand).some(value => String(value).length > 3000)) return null;
+  const demand = { titulo: text(values.titulo), solicitante: user.nome, prioridade: text(values.prioridade), status: 'Aberta', categoria: text(values.categoria), assunto: text(values.assunto), outroDetalhe: text(values.outroDetalhe), tipo: 'externa', descricao: text(values.descricao || values.novaObservacao || 'Não informado', 3000), tecnicoResponsavel: '', prazoSla: '', novaObservacao: text(values.novaObservacao, 3000) };
+  if (!demand.titulo || !demand.prioridade || !demand.categoria || (demand.categoria === 'Outros' ? !demand.outroDetalhe : !demand.assunto) || !demand.descricao || Object.values(demand).some(value => String(value).length > 3000)) return null;
   return demand;
 }
 function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
@@ -325,6 +332,24 @@ async function notifyAdmins(senderId, subject, body) {
   const admins = (await store.users()).filter(person => person.perfil === 'admin' && person.id !== senderId);
   for (const admin of admins) await store.createMessage({ id: id(), senderId, recipientId: admin.id, subject, body, createdAt: now(), readAt: null, systemAlert: true });
 }
+async function notifyTicketComment(demand, sender, text) {
+  const people = await store.users();
+  const requester = people.find(person => person.id === demand.solicitanteId)
+    || people.find(person => person.nome?.trim().toLowerCase() === demand.solicitante?.trim().toLowerCase());
+  const staffMember = sender.perfil === 'admin' || sender.perfil === 'ti';
+  const recipients = staffMember
+    ? (requester && requester.id !== sender.id ? [requester] : [])
+    : people.filter(person => ['admin', 'ti'].includes(person.perfil) && person.active !== false && person.id !== sender.id);
+  const preview = text.length > 220 ? `${text.slice(0, 217)}...` : text;
+  for (const recipient of recipients) {
+    await store.createMessage({
+      id: id(), senderId: sender.id, recipientId: recipient.id,
+      subject: `Nova resposta · ${demand.ticket || 'Chamado'}`,
+      body: `${sender.nome} respondeu ao chamado “${demand.titulo}”:\n\n${preview}`,
+      createdAt: now(), readAt: null, systemAlert: true
+    });
+  }
+}
 async function alertAssetCondition(resource, record, userId) {
   if (!isAsset(resource) || record.avaliacao === 'Bom') return;
   const assetName = resource === 'computadores' ? `Computador ${record.patrimonio}` : `${record.equipamento} (${record.patrimonio})`;
@@ -350,11 +375,6 @@ async function notifyTicketLifecycle(previous, record, actorId) {
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
 function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
 function csv(records, keys) { const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`; return `\uFEFF${keys.join(';')}\n${records.map(row => keys.map(key => quote(row[key])).join(';')).join('\n')}`; }
-async function sendVerificationCode(user, code) {
-  if (!transporter) throw new Error('Validação por e-mail não está configurada no servidor.');
-  await transporter.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to: user.email, subject: 'Código de acesso · Central TI', text: `Seu código de acesso à Central TI é ${code}. Ele expira em 10 minutos. Se você não tentou entrar, ignore esta mensagem.`, html: `<div style="font-family:Arial,sans-serif;color:#14202d"><h2>Central TI</h2><p>Use este código para concluir seu acesso:</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>O código expira em 10 minutos. Se você não tentou entrar, ignore esta mensagem.</p></div>` });
-}
-
 async function api(req, res, url) {
   const { pathname } = url;
   if (req.method === 'GET' && pathname === '/api/health') return respond(res, 200, { ok: true, database: DATABASE_URL ? 'postgresql' : 'arquivo-local', networkUrls: localAddresses() });
@@ -365,9 +385,9 @@ async function api(req, res, url) {
     if (user.active === false) return error(res, 403, 'Este usuário está desativado. Procure um administrador.');
     recordAttempt(req, true);
     if (TWO_FACTOR_REQUIRED) {
-      if (!transporter) return error(res, 503, 'A validação por e-mail está ativa, mas o envio SMTP não foi configurado.');
+      if (!emailService.enabled) return error(res, 503, 'A validação por e-mail está ativa, mas o envio SMTP não foi configurado.');
       const verificationToken = crypto.randomBytes(32).toString('hex'); const code = String(crypto.randomInt(100000, 1000000)); verificationChallenges.set(verificationToken, { userId: user.id, codeHash: crypto.createHash('sha256').update(code).digest('hex'), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
-      try { await sendVerificationCode(user, code); } catch (exception) { verificationChallenges.delete(verificationToken); console.error('Erro ao enviar código de verificação:', exception.message); return error(res, 503, 'Não foi possível enviar o código para o e-mail cadastrado.'); }
+      try { await emailService.sendVerificationCode(user, code); } catch (exception) { verificationChallenges.delete(verificationToken); console.error('Erro ao enviar código de verificação:', exception.message); return error(res, 503, 'Não foi possível enviar o código para o e-mail cadastrado.'); }
       return respond(res, 200, { requiresVerification: true, verificationToken, email: user.email.replace(/^(.{1,2}).*(@.*)$/, '$1***$2'), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() });
     }
     const token = createSingleSession(user.id); await log(user.id, 'login'); return respond(res, 200, { token, user: publicUser(user), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
@@ -398,7 +418,7 @@ async function api(req, res, url) {
   const activationMatch = pathname.match(/^\/api\/users\/([\w-]+)\/active$/); if (req.method === 'PUT' && activationMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { active } = await requestBody(req); if (typeof active !== 'boolean') return error(res, 422, 'Informe o estado do usuário.'); if (activationMatch[1] === user.id && !active) return error(res, 422, 'Você não pode desativar seu próprio usuário.'); const updated = await store.setUserActive(activationMatch[1], active); if (!updated) return error(res, 404, 'Usuário não encontrado.'); if (!active) for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, active ? 'ativou usuário' : 'desativou usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); const { password } = await requestBody(req); if (typeof password !== 'string' || password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
-  const historyMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/([\w-]+)\/history$/); if (req.method === 'GET' && historyMatch) { const [, resource, recordId] = historyMatch; if (!resourceDefinitions[resource] || !canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para este histórico.'); return respond(res, 200, { logs: await store.audits(resource, recordId) }); }
+  const historyMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/([\w-]+)\/history$/); if (req.method === 'GET' && historyMatch) { const [, resource, recordId] = historyMatch; if (!resourceDefinitions[resource] || !canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para este histórico.'); if (resource === 'demandas') { const demand = await store.record(resource, recordId); if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Demanda não encontrada.'); } return respond(res, 200, { logs: await store.audits(resource, recordId) }); }
   if (req.method === 'GET' && pathname === '/api/locations/computadores') { if (!canAccess(user, 'equipamentos')) return error(res, 403, 'Você não tem permissão para equipamentos.'); const records = await store.records('equipamentos'); const groups = [...new Set(records.map(record => record.categoriaEquipamento || 'Equipamento'))]; return respond(res, 200, { groups: groups.map(group => ({ group, total: records.filter(record => (record.categoriaEquipamento || 'Equipamento') === group).length })), records: records.map(record => ({ ...record, grupo: record.categoriaEquipamento || 'Equipamento', status: record.condicao })) }); }
   if (req.method === 'GET' && pathname === '/api/demand-statuses') { if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para demandas.'); return respond(res, 200, { statuses: await store.demandStatuses() }); }
   if (req.method === 'GET' && pathname === '/api/computer-groups') { if (!canAccess(user, 'computadores')) return error(res, 403, 'Você não tem permissão para computadores.'); return respond(res, 200, { groups: await store.computerGroups() }); }
@@ -415,8 +435,8 @@ async function api(req, res, url) {
     if (!clean.length || clean.length > 12) return error(res, 422, 'Informe de 1 a 12 status, com 2 a 50 caracteres cada.'); const inUse = (await store.records('demandas')).map(record => record.status).filter(status => status && !clean.includes(status)); if (inUse.length) return error(res, 422, `Não é possível remover status em uso: ${[...new Set(inUse)].join(', ')}.`); await store.setDemandStatuses(clean); await log(user.id, 'alterou status de demandas', 'demandas', null, { statuses: clean }); return respond(res, 200, { statuses: clean });
   }
   if (req.method === 'GET' && pathname === '/api/dashboard') {
-    const counts = {}; for (const resource of Object.keys(resourceDefinitions)) if (canAccess(user, resource)) counts[resource] = (await store.records(resource)).length;
-    const demands = canAccess(user, 'demandas') ? (await store.records('demandas')).filter(d => d.status !== 'Concluída') : []; const maintenance = (await Promise.all(['computadores', 'equipamentos', 'ramais', 'redes'].filter(resource => canAccess(user, resource)).map(resource => store.records(resource)))).flat().filter(item => /manutenção/i.test(item.status || item.condicao || item.funcionamento || '')).length; const inbox = (await store.messagesFor(user.id)).filter(message => message.recipientId === user.id && !message.readAt).length;
+    const counts = {}; for (const resource of Object.keys(resourceDefinitions)) if (canAccess(user, resource)) { const records = await store.records(resource); counts[resource] = resource === 'demandas' ? records.filter(record => demandBelongsToUser(record, user)).length : records.length; }
+    const demands = canAccess(user, 'demandas') ? (await store.records('demandas')).filter(record => demandBelongsToUser(record, user) && record.status !== 'Concluída') : []; const maintenance = (await Promise.all(['computadores', 'equipamentos', 'ramais', 'redes'].filter(resource => canAccess(user, resource)).map(resource => store.records(resource)))).flat().filter(item => /manutenção/i.test(item.status || item.condicao || item.funcionamento || '')).length; const inbox = (await store.messagesFor(user.id)).filter(message => message.recipientId === user.id && !message.readAt).length;
     const notifications = (await Promise.all(['computadores', 'equipamentos', 'ramais'].filter(resource => canAccess(user, resource)).map(async resource => (await store.records(resource)).map(record => ({ resource, record }))))).flat().map(({ resource, record }) => {
       if (resource === 'ramais') { const avaliacao = record.funcionamento || 'Bom funcionamento'; if (avaliacao === 'Bom funcionamento') return null; return { id: record.id, resource, avaliacao, titulo: `Ramal ${record.ramal}`, detalhe: `${record.setor} · ${record.responsavel}` }; }
       const automatic = !record.avaliacao && /manutenção/i.test(record.status || record.condicao || '') ? 'Precisa de manutenção' : null;
@@ -436,7 +456,7 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/audit') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem consultar a auditoria.'); return respond(res, 200, { logs: await store.audits(url.searchParams.get('resource'), url.searchParams.get('recordId')) }); }
   if (req.method === 'GET' && pathname === '/api/reports') {
     const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
-    const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => [resource, (await store.records(resource)).filter(inPeriod)])));
+    const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); return [resource, records]; })));
     const modules = visible.map(resource => ({ resource, total: data[resource].length }));
     const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao }))).concat((data.ramais || []).filter(record => record.funcionamento && record.funcionamento !== 'Bom funcionamento').map(record => ({ resource: 'ramais', item: `Ramal ${record.ramal}`, responsavel: record.responsavel, avaliacao: record.funcionamento })));
     const demands = data.demandas || []; const demandStatus = ['Aberta', 'Em andamento', 'Concluída'].map(status => ({ status, total: demands.filter(record => record.status === status).length })); const lowStock = [];
@@ -448,15 +468,45 @@ async function api(req, res, url) {
   }
   if (req.method === 'GET' && pathname === '/api/reports/export') {
     const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`); const rows = [['Relatório Central TI'], ['Período', start || 'Início', end || 'Hoje'], [], ['Módulo', 'Total']];
-    for (const resource of Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource))) rows.push([resource, (await store.records(resource)).filter(inPeriod).length]);
+    for (const resource of Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource))) { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); rows.push([resource, records.length]); }
     if (canAccess(user, 'programas')) { const programs = (await store.records('programas')).filter(record => record.status !== 'Cancelado' && Number.isSafeInteger(Number(record.valor)) && Number(record.valor) > 0); const costs = programs.reduce((total, record) => { if (record.periodicidade === 'Mensal') total.monthly += Number(record.valor); else total.annual += Number(record.valor); return total; }, { monthly: 0, annual: 0 }); rows.push([], ['Custos recorrentes de programas', 'Valor'], ['Custo mensal equivalente', formatProgramValue(Math.round(costs.monthly + costs.annual / 12))], ['Custo anual estimado', formatProgramValue(costs.monthly * 12 + costs.annual)]); }
     rows.push([], ['Alertas técnicos', 'Avaliação']); for (const resource of ['computadores', 'equipamentos'].filter(resource => canAccess(user, resource))) for (const record of (await store.records(resource)).filter(inPeriod).filter(record => record.avaliacao && record.avaliacao !== 'Bom')) rows.push([resource === 'computadores' ? record.patrimonio : record.equipamento, record.avaliacao]);
     const content = `\uFEFF${rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n')}`; res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="relatorio-central-ti.csv"', 'cache-control': 'no-store' }); return res.end(content);
   }
-  const exportMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/export$/); if (req.method === 'GET' && exportMatch) { const resource = exportMatch[1]; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); if (!canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para esta área.'); const keys = resource === 'computadores' ? [...resourceDefinitions[resource], ...optionalResourceFields.computadores, 'dataSolicitacao', 'dataRetirada', 'dataDevolucao', 'checklist', 'observacoes'] : resource === 'materiais' ? [...resourceDefinitions[resource], 'observacoes'] : resourceDefinitions[resource]; const content = csv(await store.records(resource), keys); res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="central-ti-${resource}.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(content); }
+  const exportMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/export$/); if (req.method === 'GET' && exportMatch) { const resource = exportMatch[1]; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); if (!canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para esta área.'); const keys = resource === 'computadores' ? [...resourceDefinitions[resource], ...optionalResourceFields.computadores, 'dataSolicitacao', 'dataRetirada', 'dataDevolucao', 'checklist', 'observacoes'] : resource === 'materiais' ? [...resourceDefinitions[resource], 'observacoes'] : resourceDefinitions[resource]; let records = await store.records(resource); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); const content = csv(records, keys); res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="central-ti-${resource}.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(content); }
+  const demandCommentMatch = pathname.match(/^\/api\/resources\/demandas\/([\w-]+)\/comments$/);
+  if (req.method === 'POST' && demandCommentMatch) {
+    if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para acessar chamados.');
+    const demand = await store.record('demandas', demandCommentMatch[1]);
+    if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Chamado não encontrado.');
+    const { text = '' } = await requestBody(req);
+    const cleanText = repairTextEncoding(String(text).trim());
+    if (!cleanText || cleanText.length > 3000) return error(res, 422, 'Escreva uma resposta com até 3.000 caracteres.');
+    const interaction = { id: id(), texto: cleanText, autorId: user.id, criadoEm: now() };
+    await store.updateRecord('demandas', demand.id, { interacoes: [...(demand.interacoes || []), interaction] }, user.id);
+    await notifyTicketComment(demand, user, cleanText);
+    await log(user.id, 'respondeu ao chamado', 'demandas', demand.id, { interactionId: interaction.id });
+    return respond(res, 201, { interaction: { ...interaction, autorNome: user.nome } });
+  }
+  const assignDemandMatch = pathname.match(/^\/api\/resources\/demandas\/([\w-]+)\/assign-self$/);
+  if (req.method === 'PUT' && assignDemandMatch) {
+    if (!canAccess(user, 'demandas', 'update') || !['admin', 'ti'].includes(user.perfil)) return error(res, 403, 'Somente a equipe de T.I. pode assumir chamados.');
+    const demand = await store.record('demandas', assignDemandMatch[1]);
+    if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Chamado não encontrado.');
+    const statuses = await store.demandStatuses();
+    const status = isCompletedDemandStatus(demand.status) ? demand.status : inProgressDemandStatus(statuses, demand.status);
+    const updated = await store.updateRecord('demandas', demand.id, { tecnicoResponsavel: user.nome, status }, user.id);
+    const lifecycleNotifications = await notifyTicketLifecycle(demand, updated, user.id);
+    if (Object.keys(lifecycleNotifications).length) {
+      updated.lifecycleNotifications = { ...(demand.lifecycleNotifications || {}), ...lifecycleNotifications };
+      await store.updateRecord('demandas', demand.id, { lifecycleNotifications: updated.lifecycleNotifications }, user.id);
+    }
+    await log(user.id, 'assumiu o chamado', 'demandas', demand.id, { status });
+    return respond(res, 200, { record: updated });
+  }
   const match = pathname.match(/^\/api\/resources\/([a-z]+)(?:\/([\w-]+))?$/); if (match) {
     const [, resource, recordId] = match; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); const mode = req.method === 'GET' ? (recordId ? 'consult' : 'list') : req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'update' : 'delete'; if (!canAccess(user, resource, mode)) return error(res, 403, 'Você não tem permissão para esta área.');
-    if (req.method === 'GET') { let records = await store.records(resource); if (resource === 'demandas' && hospitalOnly(user)) records = records.filter(record => record.tipo === 'externa'); if (resource === 'demandas') { const people = new Map((await store.users()).map(person => [person.id, person.nome])); for (const record of records) record.interacoes = (record.interacoes || []).map(item => ({ ...item, autorNome: people.get(item.autorId) || 'Usuário removido' })); } return respond(res, 200, { records }); }
+    if (req.method === 'GET') { let records = await store.records(resource); if (recordId) records = records.filter(record => record.id === recordId); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); if (resource === 'demandas') { const people = new Map((await store.users()).map(person => [person.id, person.nome])); for (const record of records) record.interacoes = (record.interacoes || []).map(item => ({ ...item, autorNome: people.get(item.autorId) || 'Usuário removido' })); } if (recordId && !records.length) return error(res, 404, 'Registro não encontrado.'); return respond(res, 200, { records }); }
     if (req.method === 'POST' && !recordId) {
       const body = await requestBody(req); if (resource === 'patrimonio') body.codigo = await nextPatrimonyCode(); if (resource === 'demandas' && hospitalOnly(user) && body.tipo !== 'externa') return error(res, 403, 'Este usuário pode abrir somente demandas hospitalares.'); if (resource === 'demandas' && hospitalOnly(user)) { body.solicitante = user.nome; body.status = 'Aberta'; body.tecnicoResponsavel = ''; body.prazoSla = ''; } const payload = resource === 'demandas' ? (hospitalOnly(user) ? sanitizeHospitalDemand(body, user) : sanitizeDemand(body)) : sanitize(body, resourceDefinitions[resource]);
       if (!payload) return error(res, 422, resource === 'demandas' ? 'Revise os campos obrigatórios do ticket.' : 'Preencha todos os campos corretamente.');
@@ -473,7 +523,7 @@ async function api(req, res, url) {
       await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record });
     }
     if (req.method === 'PUT' && recordId) {
-      const body = await requestBody(req); const previous = await store.record(resource, recordId); if (!previous) return error(res, 404, 'Registro não encontrado.'); if (resource === 'demandas' && !previous.tecnicoResponsavel && body.tecnicoResponsavel && String(body.status || '') === String(previous.status || '')) body.status = inProgressDemandStatus(await store.demandStatuses(), previous.status); const payload = resource === 'demandas' ? sanitizeDemand(body) : sanitize(body, resourceDefinitions[resource]);
+      const body = await requestBody(req); const previous = await store.record(resource, recordId); if (!previous) return error(res, 404, 'Registro não encontrado.'); if (resource === 'demandas' && !demandBelongsToUser(previous, user)) return error(res, 404, 'Demanda não encontrada.'); if (resource === 'demandas' && !previous.tecnicoResponsavel && String(body.status || '') !== String(previous.status || '') && !String(body.tecnicoResponsavel || '').trim()) return error(res, 422, 'Abra os detalhes e assuma o chamado antes de alterar o status.'); if (resource === 'demandas' && !previous.tecnicoResponsavel && body.tecnicoResponsavel && String(body.status || '') === String(previous.status || '')) body.status = inProgressDemandStatus(await store.demandStatuses(), previous.status); const payload = resource === 'demandas' ? sanitizeDemand(body) : sanitize(body, resourceDefinitions[resource]);
       if (!payload) return error(res, 422, resource === 'demandas' ? 'Revise os campos obrigatórios do ticket.' : 'Preencha todos os campos corretamente.');
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
@@ -486,11 +536,10 @@ async function api(req, res, url) {
       if (resource === 'demandas' && note) { record.interacoes = [...(previous.interacoes || []), { id: id(), texto: note, autorId: user.id, criadoEm: now() }]; await store.updateRecord(resource, recordId, { interacoes: record.interacoes }, user.id); }
       await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); if (resource === 'demandas') { const lifecycleNotifications = await notifyTicketLifecycle(previous, record, user.id); if (Object.keys(lifecycleNotifications).length) { record.lifecycleNotifications = { ...(previous.lifecycleNotifications || {}), ...lifecycleNotifications }; await store.updateRecord(resource, recordId, { lifecycleNotifications: record.lifecycleNotifications }, user.id); } } await log(user.id, 'editou registro', resource, record.id, { before: previous, after: payload }); return respond(res, 200, { record });
     }
-    if (req.method === 'DELETE' && recordId) { const removed = await store.deleteRecord(resource, recordId); if (!removed) return error(res, 404, 'Registro não encontrado.'); await retireAssetPatrimony(resource, removed, user.id); await log(user.id, 'excluiu registro', resource, recordId, { values: removed }); return respond(res, 200, { ok: true }); }
+    if (req.method === 'DELETE' && recordId) { if (resource === 'demandas') { const demand = await store.record(resource, recordId); if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Demanda não encontrada.'); } const removed = await store.deleteRecord(resource, recordId); if (!removed) return error(res, 404, 'Registro não encontrado.'); await retireAssetPatrimony(resource, removed, user.id); await log(user.id, 'excluiu registro', resource, recordId, { values: removed }); return respond(res, 200, { ok: true }); }
   }
   return error(res, 404, 'Rota não encontrada.');
 }
-function serveFile(req, res, url) { const requestPath = url.pathname === '/' ? '/index.html' : url.pathname; const publicFiles = new Set(['/index.html', '/app.js', '/styles.css']); if (!publicFiles.has(requestPath)) { res.writeHead(404); return res.end('Página não encontrada'); } const filePath = path.join(PUBLIC_DIR, requestPath.slice(1)); const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' }; res.writeHead(200, { 'content-type': types[path.extname(filePath)] || 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' }); fs.createReadStream(filePath).pipe(res); }
 const server = http.createServer(async (req, res) => { const url = new URL(req.url, `http://${req.headers.host}`); try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); } });
 async function start() { if (pool) await initializePostgres(); server.listen(PORT, HOST, () => { console.log(`Central TI disponível em http://localhost:${PORT}`); for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`); console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`); }); }
 start().catch(error => { console.error('Não foi possível iniciar a Central TI:', error); process.exit(1); });
