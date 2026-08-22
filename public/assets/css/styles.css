@@ -939,6 +939,12 @@ body {
 .announcement {
   border-color:#30353b;
 }
+body:not(.light-theme) .announcement p {
+  color:#d5dbe2;
+}
+body:not(.light-theme) .announcement small {
+  color:#b9c1cb;
+}
 .data-table tr:hover td,
 .mail-item:hover,
 .mail-item.selected {
