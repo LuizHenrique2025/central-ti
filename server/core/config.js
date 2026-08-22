@@ -8,7 +8,7 @@ function loadEnvFile() {
   if (!fs.existsSync(envFile)) return;
   for (const line of fs.readFileSync(envFile, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/)) {
     const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
-    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
+    if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
   }
 }
 
@@ -28,6 +28,7 @@ module.exports = {
   BACKUP_DIR: process.env.BACKUP_DIR ? path.resolve(process.env.BACKUP_DIR) : path.join(ROOT, 'backups'),
   DATABASE_URL: process.env.DATABASE_URL,
   DATABASE_SSL: process.env.DATABASE_SSL === 'true',
+  POSTGRES_MIGRATIONS_ENABLED: process.env.CENTRAL_TI_RUN_MIGRATIONS === 'true',
   TWO_FACTOR_REQUIRED: process.env.EMAIL_2FA_REQUIRED === 'true',
   SMTP_ENABLED: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',

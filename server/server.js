@@ -13,7 +13,7 @@ const { createStaticFileHandler } = require('./core/static-files');
 const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
 const { createSeedData } = require('./domain/seed-data');
-const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, TWO_FACTOR_REQUIRED, SMTP_ENABLED } = config;
+const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, POSTGRES_MIGRATIONS_ENABLED, TWO_FACTOR_REQUIRED, SMTP_ENABLED } = config;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
 const firstAccessChallenges = new Map();
@@ -85,7 +85,7 @@ function normalizeFileDb(data) {
   }
   return data;
 }
-function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const raw = fs.readFileSync(DB_FILE, 'utf8').replace(/^\uFEFF/, ''); const data = normalizeFileDb(JSON.parse(raw)); writeFileDb(data); return data; }
+function readFileDb() { if (!fs.existsSync(DB_FILE)) { fs.mkdirSync(DB_DIR, { recursive: true }); const data = initialData(); writeFileDb(data); return data; } const raw = fs.readFileSync(DB_FILE, 'utf8').replace(/^\uFEFF/, ''); return normalizeFileDb(JSON.parse(raw)); }
 function createFileBackup(force = false) {
   if (DATABASE_URL || !fs.existsSync(DB_FILE)) return null;
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -168,7 +168,7 @@ let store = fileStore;
 const sessionService = createSessionService({ getStore: () => store, sessionTtlMs: SESSION_TTL_MS, error });
 const { sessions, tooManyAttempts, recordAttempt, getAuth, createSingleSession, requireAuth } = sessionService;
 
-async function initializePostgres() {
+async function migratePostgres() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE, login TEXT UNIQUE, setor TEXT NOT NULL DEFAULT '', cpf_hash TEXT UNIQUE, cpf_last4 TEXT NOT NULL DEFAULT '', data_nascimento DATE, perfil TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, activation_status TEXT NOT NULL DEFAULT 'ativo', permissions JSONB NOT NULL DEFAULT '{}'::jsonb, salt TEXT NOT NULL, hash TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     CREATE TABLE IF NOT EXISTS records (id UUID PRIMARY KEY, resource TEXT NOT NULL, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, created_by UUID, updated_by UUID);
     CREATE INDEX IF NOT EXISTS records_resource_updated_idx ON records(resource, updated_at DESC);
@@ -194,6 +194,18 @@ async function initializePostgres() {
   }
   const localGroups = fs.existsSync(DB_FILE) ? readFileDb().computerGroups : ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'];
   await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(localGroups)]);
+}
+async function verifyPostgresSchema() {
+  await pool.query('SELECT id,nome,email,login,setor,cpf_hash,cpf_last4,data_nascimento,perfil,active,activation_status,permissions,salt,hash,must_change_password,created_at,updated_at FROM users LIMIT 0');
+  await pool.query('SELECT id,resource,data,created_at,updated_at,created_by,updated_by FROM records LIMIT 0');
+  await pool.query('SELECT id,sender_id,recipient_id,subject,body,created_at,read_at,sender_deleted_at,recipient_deleted_at FROM messages LIMIT 0');
+  await pool.query('SELECT id,user_id,action,resource,record_id,details,created_at FROM audit_logs LIMIT 0');
+  await pool.query('SELECT id,title,body,author_id,author_name,created_at FROM announcements LIMIT 0');
+  await pool.query('SELECT key,value FROM app_settings LIMIT 0');
+}
+async function initializePostgres() {
+  if (POSTGRES_MIGRATIONS_ENABLED) await migratePostgres();
+  else await verifyPostgresSchema();
   store = pgStore;
 }
 function normalizePermissions(rawPermissions) { const permissions = {}; for (const resource of Object.keys(resourceDefinitions)) { const requested = rawPermissions?.[resource]; if (!requested || typeof requested !== 'object') continue; const legacyRead = requested.read !== false; permissions[resource] = { list: requested.list ?? legacyRead, consult: requested.consult ?? legacyRead, create: requested.create ?? requested.write ?? false, update: requested.update ?? requested.write ?? false, delete: Boolean(requested.delete) }; } return permissions; }
@@ -542,4 +554,4 @@ async function api(req, res, url) {
 }
 const server = http.createServer(async (req, res) => { const url = new URL(req.url, `http://${req.headers.host}`); try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); } });
 async function start() { if (pool) await initializePostgres(); server.listen(PORT, HOST, () => { console.log(`Central TI disponível em http://localhost:${PORT}`); for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`); console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`); }); }
-start().catch(error => { console.error('Não foi possível iniciar a Central TI:', error); process.exit(1); });
+start().catch(error => { const migrationHint = DATABASE_URL && !POSTGRES_MIGRATIONS_ENABLED ? ' O banco não foi alterado. Se ele ainda não tiver a estrutura esperada, execute a migração de forma planejada com CENTRAL_TI_RUN_MIGRATIONS=true.' : ''; console.error(`Não foi possível iniciar a Central TI: ${error.message || error}.${migrationHint}`); process.exit(1); });
