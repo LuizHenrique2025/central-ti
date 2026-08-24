@@ -56,6 +56,7 @@ Os scripts em `scripts/` devem ser executados em PowerShell como administrador:
 - `install-autostart.ps1` cria a tarefa de inicialização automática. Ele nunca encerra um processo desconhecido que esteja usando a porta configurada.
 - `restart-autostart.ps1` reinicia somente a tarefa da Central TI.
 - `install-microsip-dialer.ps1` registra, para o usuário atual, o botão **Ligar** dos Ramais e autoriza o protocolo somente nas origens da Central TI. Ele requer Python 3 e MicroSIP instalados na mesma máquina; cada ligação abre o MicroSIP daquele usuário sem uma segunda confirmação do Chrome. Reinicie o Chrome após a instalação.
+- `distribution/microsip-client/` contém o pacote-base para distribuir o discador aos demais computadores.
 
 Revise os parâmetros antes de executar. Esses scripts alteram serviços e tarefas do Windows e não são necessários para desenvolvimento local.
 

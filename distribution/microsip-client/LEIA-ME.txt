@@ -1,0 +1,18 @@
+Central TI - Discador MicroSIP
+
+Use este pacote em cada computador que precisa efetuar ligacoes pela tela de Ramais.
+
+Antes de instalar:
+1. Instale o MicroSIP no computador.
+2. Instale o Python 3 e habilite o comando "py" durante a instalacao.
+3. Feche o Google Chrome.
+
+Instalacao:
+1. Extraia todo o arquivo ZIP para uma pasta local.
+2. Execute "Instalar-Discador-Central-TI.cmd".
+3. Confirme a solicitacao de administrador do Windows.
+4. Ao terminar, abra novamente o Chrome e teste o botao "Ligar" na Central TI.
+
+O instalador registra o protocolo local do discador e autoriza somente as URLs da Central TI. Ele nao compartilha senhas, dados do usuario ou chamadas.
+
+Para desinstalar, remova o protocolo "centralti-microsip" do perfil do Windows ou solicite suporte a T.I.
