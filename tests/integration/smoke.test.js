@@ -100,6 +100,12 @@ test('rejeita senha inválida e aceita a conta demonstrativa inicial', async () 
   const me = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${session.token}` } });
   assert.equal(me.status, 200);
   assert.equal((await me.json()).user.perfil, 'admin');
+
+  const microSip = await fetch(`${baseUrl}/api/integrations/microsip/status`, { headers: { authorization: `Bearer ${session.token}` } });
+  assert.equal(microSip.status, 200);
+  const microSipStatus = await microSip.json();
+  assert.equal(typeof microSipStatus.available, 'boolean');
+  assert.match(microSipStatus.message, /MicroSIP/);
 });
 
 test('usuários comuns visualizam somente as próprias demandas', async () => {
@@ -123,6 +129,61 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ currentPassword: '123456', newPassword: 'Admin2026@' })
   });
   assert.equal(changedAdmin.status, 200);
+
+  const incompleteDeletion = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Excluir atendimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Exclusão de atendimento', prioridade: 'Alta', status: 'Aberta' })
+  });
+  assert.equal(incompleteDeletion.status, 422);
+
+  const deletion = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Excluir atendimento duplicado', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Exclusão de atendimento', prioridade: 'Alta', status: 'Concluída', numeroAtendimento: 'ATD-2026-001', nomePaciente: 'Paciente de teste', categoriaMotivoExclusao: 'Atendimento duplicado', motivoExclusao: 'Atendimento registrado em duplicidade.' })
+  });
+  assert.equal(deletion.status, 201);
+  const deletionRecord = (await deletion.json()).record;
+  assert.equal(deletionRecord.numeroAtendimento, 'ATD-2026-001');
+  assert.equal(deletionRecord.nomePaciente, 'Paciente de teste');
+  assert.equal(deletionRecord.categoriaMotivoExclusao, 'Atendimento duplicado');
+  assert.equal(deletionRecord.motivoExclusao, 'Atendimento registrado em duplicidade.');
+  assert.equal(deletionRecord.exclusaoConcluidaPor, 'Administrador');
+  assert.ok(deletionRecord.exclusaoConcluidaEm);
+
+  const incompleteRateUpdate = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Atualizar taxa', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Atualizar taxa', prioridade: 'Média', status: 'Aberta' })
+  });
+  assert.equal(incompleteRateUpdate.status, 422);
+
+  const rateUpdate = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Atualizar taxa do procedimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Atualizar taxa', prioridade: 'Média', status: 'Aberta', codigoProcedimento: '10101012', convenio: 'Convênio teste', valorProcedimento: 'R$ 150,00' })
+  });
+  assert.equal(rateUpdate.status, 201);
+  const rateUpdateRecord = (await rateUpdate.json()).record;
+  assert.equal(rateUpdateRecord.codigoProcedimento, '10101012');
+  assert.equal(rateUpdateRecord.convenio, 'Convênio teste');
+  assert.equal(rateUpdateRecord.valorProcedimento, 'R$ 150,00');
+
+  const procedureInclusion = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Incluir procedimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Incluir procedimento', prioridade: 'Média', status: 'Aberta', valorProcedimento: 'R$ 80,00', tuss: '10101012' })
+  });
+  assert.equal(procedureInclusion.status, 201);
+
+  const tableUpdate = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Atualizar tabela', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Atualizar tabela', prioridade: 'Média', status: 'Aberta', convenio: 'Convênio teste', tabela: 'Tabela particular 2026' })
+  });
+  assert.equal(tableUpdate.status, 201);
+
+  const exclusionsReport = await request('/api/reports?exclusionReason=Atendimento%20duplicado', adminToken);
+  assert.equal(exclusionsReport.status, 200);
+  const exclusionsData = await exclusionsReport.json();
+  assert.equal(exclusionsData.exclusions.total, 1);
+  assert.equal(exclusionsData.exclusions.completed, 1);
+  assert.equal(exclusionsData.exclusions.records[0].numeroAtendimento, 'ATD-2026-001');
+
   const permissions = { demandas: { list: true, consult: true, create: true, update: false, delete: false } };
   for (const suffix of ['a', 'b']) {
     const created = await request('/api/users', adminToken, {

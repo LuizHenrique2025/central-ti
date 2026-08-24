@@ -85,7 +85,7 @@ function injectResourceFilters() {
   const box = document.createElement('span');
   box.className = 'generated-module-filters';
   for (const [key, label] of moduleFilters[state.page]) {
-    const values = [...new Set(state.records.map(record => record[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+    const values = resourceFilterValues(state.page, key);
     if (!values.length) continue;
     const select = document.createElement('select');
     select.innerHTML = `<option value="">${key === 'periodicidade' ? 'Mensal e anual' : `Todos os ${label.toLowerCase()}`}</option>${values.map(value => `<option ${state.resourceFilters[`${state.page}-${key}`] === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}`;
@@ -106,6 +106,68 @@ function injectProgramCosts() {
     card.innerHTML = `<div class="metric-name">${label}</div><div class="metric-number">${formatCurrency(value)}</div>`;
     metrics.append(card);
   }
+}
+
+function injectMicroSipButtons() {
+  if (state.loading || state.page !== 'ramais') return;
+  document.querySelectorAll('.data-table tbody tr').forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const extension = cells[0]?.textContent.trim() || '';
+    const status = cells[4]?.textContent.trim() || '';
+    const actions = cells[cells.length - 1];
+    if (!actions || actions.querySelector('.dial-extension') || !/^\d{2,6}$/.test(extension)) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'dial-extension';
+    button.textContent = '☎ Ligar';
+    button.title = `Ligar para o ramal ${extension} pelo MicroSIP`;
+    button.disabled = status !== 'Ativo';
+    if (button.disabled) button.title = 'O ramal precisa estar ativo para realizar a ligação.';
+    button.onclick = () => dialWithMicroSip(button, extension);
+    actions.prepend(button);
+  });
+}
+
+async function dialWithMicroSip(button, extension) {
+  if (button.dataset.checking === 'true') return;
+  button.dataset.checking = 'true';
+  button.disabled = true;
+  const originalLabel = button.textContent;
+  button.textContent = 'Verificando...';
+  try {
+    const status = await api('/api/integrations/microsip/status');
+    if (!status.available) {
+      toast(status.message || 'MicroSIP não está instalado. Use o telefone fixo para realizar a ligação.');
+      return;
+    }
+    if (!confirm(`Abrir o MicroSIP para ligar ao ramal ${extension}?`)) return;
+    window.location.href = `centralti-microsip://call/${encodeURIComponent(extension)}`;
+  } catch {
+    toast('Não foi possível validar o MicroSIP. Use o telefone fixo para realizar a ligação.');
+  } finally {
+    button.dataset.checking = '';
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+function injectPrintableReportTemplate() {
+  if (state.loading || state.page !== 'relatorios') return;
+  const content = document.querySelector('.content');
+  const actions = content?.querySelector('.report-actions');
+  if (!content || !actions || content.querySelector('.print-document-header')) return;
+  const title = content.querySelector('.page-title')?.textContent.trim() || 'Relatórios';
+  const activeTab = content.querySelector('.report-tabs .active')?.textContent.trim() || 'Visão Geral';
+  const dates = [...actions.querySelectorAll('input[type="date"]')].map(input => input.value ? new Date(`${input.value}T12:00:00`).toLocaleDateString('pt-BR') : 'Todo o período');
+  const issuedAt = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  const header = document.createElement('section');
+  header.className = 'print-document-header';
+  header.innerHTML = `<div><b>Central TI</b><span>Hospital Dia Revitalite</span></div><div><small>DOCUMENTO CONFIDENCIAL</small><strong>${esc(title)} - ${esc(activeTab)}</strong><span>Período: ${esc(dates[0])} até ${esc(dates[1])}</span></div>`;
+  const footer = document.createElement('footer');
+  footer.className = 'print-document-footer';
+  footer.textContent = `Central TI - Relatório emitido em ${issuedAt} - Uso interno e auditoria`;
+  content.prepend(header);
+  content.append(footer);
 }
 
 async function refreshInBackground() {
@@ -132,9 +194,12 @@ new MutationObserver(applyPasswordMinimum).observe(document.body, { childList: t
 new MutationObserver(applySidebarChrome).observe($('#app'), { childList: true, subtree: true });
 new MutationObserver(injectResourceFilters).observe($('#app'), { childList: true, subtree: true });
 new MutationObserver(injectProgramCosts).observe($('#app'), { childList: true, subtree: true });
+new MutationObserver(injectMicroSipButtons).observe($('#app'), { childList: true, subtree: true });
+new MutationObserver(injectPrintableReportTemplate).observe($('#app'), { childList: true, subtree: true });
 applyPasswordMinimum();
 applySidebarChrome();
 applyColorTheme();
+injectPrintableReportTemplate();
 setInterval(refreshInBackground, 4000);
 window.addEventListener('focus', refreshInBackground);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshInBackground(); });

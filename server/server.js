@@ -17,6 +17,7 @@ const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL,
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
 const firstAccessChallenges = new Map();
+const EXCLUSION_REASON_CATEGORIES = ['Atendimento duplicado', 'Paciente incorreto', 'Procedimento incorreto', 'Convênio incorreto', 'Guia/autorização incorreta', 'Lançamento por engano', 'Cadastro duplicado', 'Exame/procedimento duplicado', 'Outros'];
 const emailService = createEmailService(config);
 const serveFile = createStaticFileHandler(PUBLIC_DIR);
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined }) : null;
@@ -254,6 +255,14 @@ function sanitizeDemand(values) {
   if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
   if (!demand.categoria || (demand.categoria === 'Outros' ? !demand.outroDetalhe : !demand.assunto)) return null;
+  const detailFields = sanitizeDemandDetailFields(values, demand.assunto);
+  if (!detailFields) return null;
+  Object.assign(demand, detailFields);
+  if (isExclusionDemand(demand)) {
+    const exclusion = sanitizeExclusionRequest(values);
+    if (!exclusion) return null;
+    Object.assign(demand, exclusion);
+  }
   demand.tipo = values.tipo === 'externa' ? 'externa' : 'interna';
   if (demand.tipo === 'externa') {
     for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; demand[key] = value; }
@@ -261,11 +270,105 @@ function sanitizeDemand(values) {
   }
   return demand;
 }
+function isExclusionDemand(demand) {
+  const subject = String(typeof demand === 'object' ? demand?.assunto : demand || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return subject.includes('exclusao');
+}
+function demandDetailRequirement(subject) {
+  const normalized = String(subject || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (normalized.includes('atualizar taxa') || normalized.includes('atualizar valor de procedimento')) return ['codigoProcedimento', 'convenio', 'valorProcedimento'];
+  if (normalized.includes('incluir procedimento')) return ['valorProcedimento', 'tuss'];
+  if (normalized.includes('atualizar tabela')) return ['convenio', 'tabela'];
+  return [];
+}
+function sanitizeDemandDetailFields(values, subject) {
+  const required = demandDetailRequirement(subject);
+  const result = {};
+  for (const key of ['codigoProcedimento', 'convenio', 'valorProcedimento', 'tuss', 'tabela']) {
+    const value = repairTextEncoding(String(values[key] || '').trim());
+    if (value.length > 250 || (required.includes(key) && !value)) return null;
+    result[key] = required.includes(key) ? value : '';
+  }
+  return result;
+}
+function exclusionValue(record, field) {
+  if (field === 'user') return record.usuarioSolicitante || record.solicitante || 'Não informado';
+  if (field === 'sector') return record.setorSolicitante || 'Não informado';
+  if (field === 'type') return record.assunto || 'Não informado';
+  if (field === 'reason') return record.categoriaMotivoExclusao || 'Não categorizado';
+  if (field === 'status') return record.status || 'Não informado';
+  return '';
+}
+function exclusionStatus(record) {
+  const value = String(record.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/recus|cancel/.test(value)) return 'declined';
+  return isCompletedDemandStatus(record.status) ? 'completed' : 'pending';
+}
+function countExclusions(records, field) {
+  return [...records.reduce((map, record) => map.set(exclusionValue(record, field), (map.get(exclusionValue(record, field)) || 0) + 1), new Map()).entries()].map(([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'pt-BR'));
+}
+function buildExclusionReport(demands, filters = {}) {
+  const all = demands.filter(isExclusionDemand);
+  const filtered = all.filter(record => ['user', 'sector', 'type', 'reason', 'status'].every(field => !filters[field] || exclusionValue(record, field) === filters[field]));
+  const months = [...filtered.reduce((map, record) => {
+    const key = String(record.createdAt || '').slice(0, 7) || 'Sem data';
+    const current = map.get(key) || { month: key, total: 0, completed: 0 };
+    current.total += 1;
+    if (exclusionStatus(record) === 'completed') current.completed += 1;
+    map.set(key, current);
+    return map;
+  }, new Map()).values()].sort((a, b) => a.month.localeCompare(b.month));
+  const recurring = [...filtered.reduce((map, record) => {
+    const label = `${exclusionValue(record, 'user')} · ${exclusionValue(record, 'reason')}`;
+    map.set(label, (map.get(label) || 0) + 1);
+    return map;
+  }, new Map()).entries()].map(([label, total]) => ({ label, total })).filter(item => item.total > 1).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'pt-BR'));
+  return {
+    total: filtered.length,
+    completed: filtered.filter(record => exclusionStatus(record) === 'completed').length,
+    pending: filtered.filter(record => exclusionStatus(record) === 'pending').length,
+    declined: filtered.filter(record => exclusionStatus(record) === 'declined').length,
+    users: countExclusions(filtered, 'user'), sectors: countExclusions(filtered, 'sector'), types: countExclusions(filtered, 'type'), reasons: countExclusions(filtered, 'reason'), statuses: countExclusions(filtered, 'status'), months, recurring,
+    filters: Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, countExclusions(all, field).map(item => item.label)])),
+    records: filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+  };
+}
+function sanitizeExclusionRequest(values) {
+  const category = repairTextEncoding(String(values.categoriaMotivoExclusao || '').trim());
+  if (!EXCLUSION_REASON_CATEGORIES.includes(category)) return null;
+  const fields = [['numeroAtendimento', 100], ['nomePaciente', 250], ['motivoExclusao', 1000]];
+  const result = {};
+  for (const [key, limit] of fields) {
+    const value = repairTextEncoding(String(values[key] || '').trim());
+    if (!value || value.length > limit) return null;
+    result[key] = value;
+  }
+  result.categoriaMotivoExclusao = category;
+  return result;
+}
+function markExclusionMetadata(record, user) {
+  if (!isExclusionDemand(record)) return;
+  record.usuarioSolicitante ||= user.nome;
+  record.setorSolicitante ||= user.setor || 'Não informado';
+  record.solicitanteId ||= user.id;
+  if (isCompletedDemandStatus(record.status) && !record.exclusaoConcluidaEm) {
+    record.exclusaoConcluidaPor = user.nome;
+    record.exclusaoConcluidaEm = now();
+  }
+}
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeHospitalDemand(values, user) {
   const text = (value, limit = 250) => repairTextEncoding(String(value || '').trim());
   const demand = { titulo: text(values.titulo), solicitante: user.nome, prioridade: text(values.prioridade), status: 'Aberta', categoria: text(values.categoria), assunto: text(values.assunto), outroDetalhe: text(values.outroDetalhe), tipo: 'externa', descricao: text(values.descricao || values.novaObservacao || 'Não informado', 3000), tecnicoResponsavel: '', prazoSla: '', novaObservacao: text(values.novaObservacao, 3000) };
   if (!demand.titulo || !demand.prioridade || !demand.categoria || (demand.categoria === 'Outros' ? !demand.outroDetalhe : !demand.assunto) || !demand.descricao || Object.values(demand).some(value => String(value).length > 3000)) return null;
+  const detailFields = sanitizeDemandDetailFields(values, demand.assunto);
+  if (!detailFields) return null;
+  Object.assign(demand, detailFields);
+  if (isExclusionDemand(demand)) {
+    const exclusion = sanitizeExclusionRequest(values);
+    if (!exclusion) return null;
+    Object.assign(demand, exclusion);
+  }
   return demand;
 }
 function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
@@ -386,6 +489,16 @@ async function notifyTicketLifecycle(previous, record, actorId) {
 }
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
 function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
+function microSipStatus() {
+  const candidates = [
+    process.env.MICROSIP_PATH,
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'MicroSIP', 'microsip.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'MicroSIP', 'microsip.exe'),
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'MicroSIP', 'microsip.exe') : ''
+  ].filter(Boolean);
+  const available = candidates.some(candidate => fs.existsSync(candidate));
+  return { available, message: available ? 'MicroSIP disponível para ligação.' : 'MicroSIP não está instalado. Use o telefone fixo para realizar a ligação.' };
+}
 function csv(records, keys) { const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`; return `\uFEFF${keys.join(';')}\n${records.map(row => keys.map(key => quote(row[key])).join(';')).join('\n')}`; }
 async function api(req, res, url) {
   const { pathname } = url;
@@ -414,6 +527,7 @@ async function api(req, res, url) {
   if (req.method === 'POST' && pathname === '/api/auth/logout') { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); if (token) sessions.delete(token); return respond(res, 200, { ok: true }); }
   const user = await requireAuth(req, res); if (!user) return;
   if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: localAddresses(), database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
+  if (req.method === 'GET' && pathname === '/api/integrations/microsip/status') return respond(res, 200, microSipStatus());
   if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (typeof newPassword !== 'string' || newPassword.length < 8 || !/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
   if (user.mustChangePassword) return error(res, 403, 'Altere sua senha antes de acessar o sistema.');
   if (req.method === 'GET' && pathname === '/api/users') return respond(res, 200, { users: (await store.users()).map(publicUser) });
@@ -467,6 +581,7 @@ async function api(req, res, url) {
   const deleteMessageMatch = pathname.match(/^\/api\/messages\/([\w-]+)$/); if (req.method === 'DELETE' && deleteMessageMatch) { const deleted = await store.deleteMessageFor(deleteMessageMatch[1], user.id); if (!deleted) return error(res, 404, 'Mensagem não encontrada.'); await log(user.id, 'moveu mensagem para apagadas', 'messages', deleteMessageMatch[1]); return respond(res, 200, { ok: true }); }
   if (req.method === 'GET' && pathname === '/api/audit') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem consultar a auditoria.'); return respond(res, 200, { logs: await store.audits(url.searchParams.get('resource'), url.searchParams.get('recordId')) }); }
   if (req.method === 'GET' && pathname === '/api/reports') {
+    if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem acessar relatórios e dados de auditoria.');
     const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
     const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); return [resource, records]; })));
     const modules = visible.map(resource => ({ resource, total: data[resource].length }));
@@ -476,12 +591,21 @@ async function api(req, res, url) {
     const programCosts = activePrograms.reduce((costs, record) => { const value = Number(record.valor); if (record.periodicidade === 'Mensal') costs.monthly += value; else costs.annual += value; return costs; }, { monthly: 0, annual: 0 });
     programCosts.monthlyEquivalent = Math.round(programCosts.monthly + programCosts.annual / 12);
     programCosts.annualEquivalent = programCosts.monthly * 12 + programCosts.annual;
-    return respond(res, 200, { generatedAt: now(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, lowStock, programCosts, activePrograms: activePrograms.length });
+    const exclusionFilters = Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, url.searchParams.get(`exclusion${field[0].toUpperCase()}${field.slice(1)}`) || '']));
+    const exclusions = buildExclusionReport(demands, exclusionFilters);
+    const audit = user.perfil === 'admin' ? (await store.audits()).filter(inPeriod).slice(0, 100) : [];
+    return respond(res, 200, { generatedAt: now(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, lowStock, programCosts, activePrograms: activePrograms.length, exclusions, audit });
   }
   if (req.method === 'GET' && pathname === '/api/reports/export') {
+    if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem exportar relatórios.');
     const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`); const rows = [['Relatório Central TI'], ['Período', start || 'Início', end || 'Hoje'], [], ['Módulo', 'Total']];
     for (const resource of Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource))) { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); rows.push([resource, records.length]); }
     if (canAccess(user, 'programas')) { const programs = (await store.records('programas')).filter(record => record.status !== 'Cancelado' && Number.isSafeInteger(Number(record.valor)) && Number(record.valor) > 0); const costs = programs.reduce((total, record) => { if (record.periodicidade === 'Mensal') total.monthly += Number(record.valor); else total.annual += Number(record.valor); return total; }, { monthly: 0, annual: 0 }); rows.push([], ['Custos recorrentes de programas', 'Valor'], ['Custo mensal equivalente', formatProgramValue(Math.round(costs.monthly + costs.annual / 12))], ['Custo anual estimado', formatProgramValue(costs.monthly * 12 + costs.annual)]); }
+    const exclusionFilters = Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, url.searchParams.get(`exclusion${field[0].toUpperCase()}${field.slice(1)}`) || '']));
+    const demands = (await store.records('demandas')).filter(record => demandBelongsToUser(record, user) && inPeriod(record));
+    const exclusions = buildExclusionReport(demands, exclusionFilters);
+    rows.push([], ['Solicitações de exclusão'], ['Ticket', 'Atendimento', 'Paciente', 'Usuário solicitante', 'Setor', 'Tipo', 'Categoria do motivo', 'Motivo', 'Solicitada em', 'Status', 'Concluída por', 'Concluída em']);
+    for (const record of exclusions.records) rows.push([record.ticket || '', record.numeroAtendimento || '', record.nomePaciente || '', exclusionValue(record, 'user'), exclusionValue(record, 'sector'), exclusionValue(record, 'type'), exclusionValue(record, 'reason'), record.motivoExclusao || '', record.createdAt || '', record.status || '', record.exclusaoConcluidaPor || '', record.exclusaoConcluidaEm || '']);
     rows.push([], ['Alertas técnicos', 'Avaliação']); for (const resource of ['computadores', 'equipamentos'].filter(resource => canAccess(user, resource))) for (const record of (await store.records(resource)).filter(inPeriod).filter(record => record.avaliacao && record.avaliacao !== 'Bom')) rows.push([resource === 'computadores' ? record.patrimonio : record.equipamento, record.avaliacao]);
     const content = `\uFEFF${rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n')}`; res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="relatorio-central-ti.csv"', 'cache-control': 'no-store' }); return res.end(content);
   }
@@ -531,6 +655,7 @@ async function api(req, res, url) {
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
+      if (resource === 'demandas') markExclusionMetadata(record, user);
       if (resource === 'demandas') { record.ticket = `TI-${String((await store.records('demandas')).length + 1).padStart(4, '0')}`; record.interacoes = note ? [{ id: id(), texto: note, autorId: user.id, criadoEm: now() }] : []; if (hospitalOnly(user)) record.solicitanteId = user.id; }
       await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record });
     }
@@ -544,6 +669,11 @@ async function api(req, res, url) {
       const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload, recordId); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
+      if (resource === 'demandas' && isExclusionDemand(payload)) {
+        const merged = { ...previous, ...payload };
+        markExclusionMetadata(merged, user);
+        Object.assign(payload, ...['usuarioSolicitante', 'setorSolicitante', 'solicitanteId', 'exclusaoConcluidaPor', 'exclusaoConcluidaEm'].filter(key => merged[key] !== undefined).map(key => ({ [key]: merged[key] })));
+      }
       const record = await store.updateRecord(resource, recordId, payload, user.id); if (!record) return error(res, 404, 'Registro não encontrado.');
       if (resource === 'demandas' && note) { record.interacoes = [...(previous.interacoes || []), { id: id(), texto: note, autorId: user.id, criadoEm: now() }]; await store.updateRecord(resource, recordId, { interacoes: record.interacoes }, user.id); }
       await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); if (resource === 'demandas') { const lifecycleNotifications = await notifyTicketLifecycle(previous, record, user.id); if (Object.keys(lifecycleNotifications).length) { record.lifecycleNotifications = { ...(previous.lifecycleNotifications || {}), ...lifecycleNotifications }; await store.updateRecord(resource, recordId, { lifecycleNotifications: record.lifecycleNotifications }, user.id); } } await log(user.id, 'editou registro', resource, record.id, { before: previous, after: payload }); return respond(res, 200, { record });
