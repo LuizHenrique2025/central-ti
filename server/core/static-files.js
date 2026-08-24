@@ -3,6 +3,7 @@ const path = require('node:path');
 
 const PUBLIC_FILES = new Set([
   '/index.html',
+  '/assets/js/core/config.js',
   '/assets/js/app.js',
   '/assets/js/core/bootstrap.js',
   '/assets/css/styles.css'

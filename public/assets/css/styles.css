@@ -1431,13 +1431,27 @@ body:not(.light-theme) .announcement small {
 .ticket-information dt { color:var(--muted); font-size:11px; }
 .ticket-information dd { margin:0; font-size:12px; font-weight:700; overflow-wrap:anywhere; }
 .ticket-information .ticket-assume,
-.ticket-information .ticket-edit {
+.ticket-information .ticket-edit,
+.ticket-information .ticket-delete {
   display:block;
   width:100%;
   margin-inline:0;
 }
+.ticket-information > .ticket-assume,
+.ticket-information > .ticket-edit,
+.ticket-information > .ticket-delete {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:42px;
+  box-sizing:border-box;
+}
+.ticket-information > .ticket-assume { margin-top:16px; }
 .ticket-edit { margin-top:10px; }
 .ticket-assume { margin-top:8px; }
+.ticket-delete { margin-top:10px; border:1px solid #8f4a51; border-radius:8px; padding:10px 12px; }
+body:not(.light-theme) .ticket-delete { color:#ffb7be; border-color:#80454d; background:#4d272c; }
+.light-theme .ticket-delete { color:#b93843; border-color:#e2a7ad; background:#fff4f5; }
 .dial-extension { border:1px solid #d4dbe3; border-radius:6px; padding:6px 9px; margin-right:7px; color:#354355; background:#edf1f5; font-size:11px; font-weight:800; }
 .dial-extension:hover:not(:disabled) { color:#fff; border-color:#1677ff; background:#1677ff; }
 .dial-extension:disabled { cursor:not-allowed; opacity:.45; }
@@ -2194,5 +2208,55 @@ body:not(.light-theme) .demand-detail-heading span {
   .ticket-information {
     border-right: 0;
     border-top: 1px solid var(--line);
+    padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .ticket-information > .ticket-assume,
+  .ticket-information > .ticket-edit,
+  .ticket-information > .ticket-delete {
+    min-height:44px;
   }
 }
+
+/* Gestão de usuários: comandos e filtros inspirados em cadastros administrativos. */
+.users-admin { display:grid; gap:16px; }
+.users-command-bar { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#1b1f24; }
+.users-command-title { display:flex; align-items:center; gap:11px; min-width:0; }
+.users-command-title > span { display:grid; place-items:center; width:38px; height:38px; border-radius:9px; background:#2a3037; color:#d7dce1; font-size:19px; }
+.users-command-title b,.users-command-title small { display:block; }
+.users-command-title b { font-size:14px; }
+.users-command-title small { margin-top:2px; color:var(--muted); font-size:12px; }
+.users-command-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+.users-filters { display:grid; grid-template-columns:minmax(220px,1.5fr) repeat(3,minmax(150px,1fr)); gap:10px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#181b20; }
+.users-filters label { display:grid; gap:6px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; }
+.users-filters input,.users-filters select { width:100%; min-width:0; border:1px solid #3a4047; border-radius:8px; padding:10px 11px; color:var(--ink); background:#171a1f; text-transform:none; letter-spacing:0; font-size:13px; font-weight:500; }
+.users-table-head { display:flex; align-items:center; justify-content:space-between; padding:15px 17px; border-bottom:1px solid var(--line); }
+.users-table-head h3 { margin:0; font-size:15px; }
+.users-table-head span,.users-table td small { display:block; margin-top:3px; color:var(--muted); font-size:11px; font-weight:500; }
+.users-table td b { font-size:13px; }
+.light-theme .users-command-bar,.light-theme .users-filters { background:#fff; }
+.light-theme .users-command-title > span { background:#edf3fa; color:#44617d; }
+.light-theme .users-filters input,.light-theme .users-filters select { border-color:#d5dee7; color:#172234; background:#fff; }
+@media (max-width:800px) { .users-command-bar { align-items:flex-start; flex-direction:column; } .users-command-actions { justify-content:flex-start; } .users-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:540px) { .users-command-actions { width:100%; } .users-command-actions button { flex:1 1 130px; } .users-filters { grid-template-columns:1fr; padding:12px; } }
+
+/* Confirmações próprias da Central T.I.; substituem as caixas nativas do navegador. */
+.system-confirmation { position:fixed; inset:0; z-index:40; display:grid; place-items:center; padding:20px; background:#030405c7; backdrop-filter:blur(5px); }
+.system-confirmation-card { width:min(430px,100%); display:grid; grid-template-columns:40px minmax(0,1fr); gap:13px; padding:22px; border:1px solid #3b4148; border-radius:14px; color:#eef1f4; background:#1b1f24; box-shadow:0 24px 75px #000a; }
+.system-confirmation-icon { display:grid; place-items:center; width:40px; height:40px; border:1px solid #8f4a51; border-radius:50%; color:#ffbec4; background:#4d272c; font-weight:900; font-size:18px; }
+.system-confirmation h2 { margin:2px 0 6px; font:700 18px "Space Grotesk"; }
+.system-confirmation p { margin:0; color:#b8c0c8; font-size:13px; line-height:1.5; }
+.system-confirmation-actions { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:9px; margin-top:5px; }
+.system-confirmation-actions .secondary,.system-confirmation-actions .danger-confirm { min-height:40px; padding:9px 14px; border-radius:8px; font-weight:800; }
+.danger-confirm { border:1px solid #80454d; color:#ffd7da; background:#6c3038; }
+.danger-confirm:hover { background:#823943; }
+.system-confirmation .add-record { min-height:40px; }
+.system-confirmation:has(.add-record) .system-confirmation-icon { border-color:#5d9b7e; color:#c2f2d7; background:#264937; }
+.light-theme .system-confirmation-card { border-color:#d6dee6; color:#172234; background:#fff; box-shadow:0 24px 75px #10283f45; }
+.light-theme .system-confirmation p { color:#5e6d7f; }
+.light-theme .system-confirmation-actions .secondary { border-color:#d6dee6; background:#f3f6f9; color:#3e5064; }
+@media (max-width:540px) { .system-confirmation { align-items:end; padding:12px; } .system-confirmation-card { grid-template-columns:34px minmax(0,1fr); padding:18px; } .system-confirmation-icon { width:34px; height:34px; } .system-confirmation-actions { display:grid; grid-template-columns:1fr 1fr; } .system-confirmation-actions button { width:100%; } }
+
+.sidebar .nav .nav-icon:has(.wifi-icon),
+.sidebar .avatar { color:#17191c; background:linear-gradient(145deg,#f0f2f4,#8c939b); box-shadow:0 6px 18px #0008,inset 0 1px 0 #fff; }
+.wifi-icon { width:17px; height:17px; fill:currentColor; }

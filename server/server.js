@@ -5,19 +5,21 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const net = require('node:net');
 const { Pool } = require('pg');
-const { resourceDefinitions, optionalResourceFields, access, computerChecklist } = require('./domain/resources');
+const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
 const config = require('./core/config');
 const { passwordHash, verifyPassword, normalizeCpf, cpfHash, firstName } = require('./core/security');
 const { respond, error, requestBody } = require('./core/http');
 const { createStaticFileHandler } = require('./core/static-files');
 const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
+const { createReportService } = require('./services/report-service');
 const { createSeedData } = require('./domain/seed-data');
+const { isCompletedDemandStatus, isExclusionDemand, exclusionValue, buildExclusionReport, sanitizeExclusionRequest, markExclusionMetadata } = require('./domain/exclusion-rules');
 const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, POSTGRES_MIGRATIONS_ENABLED, TWO_FACTOR_REQUIRED, SMTP_ENABLED } = config;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
 const firstAccessChallenges = new Map();
-const EXCLUSION_REASON_CATEGORIES = ['Atendimento duplicado', 'Paciente incorreto', 'Procedimento incorreto', 'Convênio incorreto', 'Guia/autorização incorreta', 'Lançamento por engano', 'Cadastro duplicado', 'Exame/procedimento duplicado', 'Outros'];
+const DISABLED_RESOURCES = new Set(disabledResources);
 const emailService = createEmailService(config);
 const serveFile = createStaticFileHandler(PUBLIC_DIR);
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined }) : null;
@@ -166,6 +168,7 @@ const pgStore = {
   ,async setComputerGroups(groups) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(groups)]); return groups; }
 };
 let store = fileStore;
+const reportService = createReportService({ getStore: () => store, resourceDefinitions, canAccess, demandBelongsToUser, buildExclusionReport, exclusionValue, formatProgramValue });
 const sessionService = createSessionService({ getStore: () => store, sessionTtlMs: SESSION_TTL_MS, error });
 const { sessions, tooManyAttempts, recordAttempt, getAuth, createSingleSession, requireAuth } = sessionService;
 
@@ -210,7 +213,7 @@ async function initializePostgres() {
   store = pgStore;
 }
 function normalizePermissions(rawPermissions) { const permissions = {}; for (const resource of Object.keys(resourceDefinitions)) { const requested = rawPermissions?.[resource]; if (!requested || typeof requested !== 'object') continue; const legacyRead = requested.read !== false; permissions[resource] = { list: requested.list ?? legacyRead, consult: requested.consult ?? legacyRead, create: requested.create ?? requested.write ?? false, update: requested.update ?? requested.write ?? false, delete: Boolean(requested.delete) }; } return permissions; }
-function canAccess(user, resource, mode = 'list') { if (user.perfil === 'admin') return true; const permission = user.permissions?.[resource]; if (permission) { const legacyRead = permission.read !== false; const map = { list: permission.list ?? legacyRead, consult: permission.consult ?? legacyRead, create: permission.create ?? permission.write ?? false, update: permission.update ?? permission.write ?? false, delete: Boolean(permission.delete) }; return Boolean(map[mode]); } if (user.permissions && Object.keys(user.permissions).length) return false; if ((mode === 'list' || mode === 'consult') && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
+function canAccess(user, resource, mode = 'list') { if (DISABLED_RESOURCES.has(resource)) return false; if (user.perfil === 'admin') return true; const permission = user.permissions?.[resource]; if (permission) { const legacyRead = permission.read !== false; const map = { list: permission.list ?? legacyRead, consult: permission.consult ?? legacyRead, create: permission.create ?? permission.write ?? false, update: permission.update ?? permission.write ?? false, delete: Boolean(permission.delete) }; return Boolean(map[mode]); } if (user.permissions && Object.keys(user.permissions).length) return false; if ((mode === 'list' || mode === 'consult') && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
 function sanitize(values, keys) {
   const item = {};
   for (const key of keys) {
@@ -259,7 +262,7 @@ function sanitizeDemand(values) {
   if (!detailFields) return null;
   Object.assign(demand, detailFields);
   if (isExclusionDemand(demand)) {
-    const exclusion = sanitizeExclusionRequest(values);
+    const exclusion = sanitizeExclusionRequest(values, repairTextEncoding);
     if (!exclusion) return null;
     Object.assign(demand, exclusion);
   }
@@ -269,10 +272,6 @@ function sanitizeDemand(values) {
     if (!/^\S+@\S+\.\S+$/.test(demand.email)) return null;
   }
   return demand;
-}
-function isExclusionDemand(demand) {
-  const subject = String(typeof demand === 'object' ? demand?.assunto : demand || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  return subject.includes('exclusao');
 }
 function demandDetailRequirement(subject) {
   const normalized = String(subject || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -291,71 +290,6 @@ function sanitizeDemandDetailFields(values, subject) {
   }
   return result;
 }
-function exclusionValue(record, field) {
-  if (field === 'user') return record.usuarioSolicitante || record.solicitante || 'Não informado';
-  if (field === 'sector') return record.setorSolicitante || 'Não informado';
-  if (field === 'type') return record.assunto || 'Não informado';
-  if (field === 'reason') return record.categoriaMotivoExclusao || 'Não categorizado';
-  if (field === 'status') return record.status || 'Não informado';
-  return '';
-}
-function exclusionStatus(record) {
-  const value = String(record.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (/recus|cancel/.test(value)) return 'declined';
-  return isCompletedDemandStatus(record.status) ? 'completed' : 'pending';
-}
-function countExclusions(records, field) {
-  return [...records.reduce((map, record) => map.set(exclusionValue(record, field), (map.get(exclusionValue(record, field)) || 0) + 1), new Map()).entries()].map(([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'pt-BR'));
-}
-function buildExclusionReport(demands, filters = {}) {
-  const all = demands.filter(isExclusionDemand);
-  const filtered = all.filter(record => ['user', 'sector', 'type', 'reason', 'status'].every(field => !filters[field] || exclusionValue(record, field) === filters[field]));
-  const months = [...filtered.reduce((map, record) => {
-    const key = String(record.createdAt || '').slice(0, 7) || 'Sem data';
-    const current = map.get(key) || { month: key, total: 0, completed: 0 };
-    current.total += 1;
-    if (exclusionStatus(record) === 'completed') current.completed += 1;
-    map.set(key, current);
-    return map;
-  }, new Map()).values()].sort((a, b) => a.month.localeCompare(b.month));
-  const recurring = [...filtered.reduce((map, record) => {
-    const label = `${exclusionValue(record, 'user')} · ${exclusionValue(record, 'reason')}`;
-    map.set(label, (map.get(label) || 0) + 1);
-    return map;
-  }, new Map()).entries()].map(([label, total]) => ({ label, total })).filter(item => item.total > 1).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'pt-BR'));
-  return {
-    total: filtered.length,
-    completed: filtered.filter(record => exclusionStatus(record) === 'completed').length,
-    pending: filtered.filter(record => exclusionStatus(record) === 'pending').length,
-    declined: filtered.filter(record => exclusionStatus(record) === 'declined').length,
-    users: countExclusions(filtered, 'user'), sectors: countExclusions(filtered, 'sector'), types: countExclusions(filtered, 'type'), reasons: countExclusions(filtered, 'reason'), statuses: countExclusions(filtered, 'status'), months, recurring,
-    filters: Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, countExclusions(all, field).map(item => item.label)])),
-    records: filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-  };
-}
-function sanitizeExclusionRequest(values) {
-  const category = repairTextEncoding(String(values.categoriaMotivoExclusao || '').trim());
-  if (!EXCLUSION_REASON_CATEGORIES.includes(category)) return null;
-  const fields = [['numeroAtendimento', 100], ['nomePaciente', 250], ['motivoExclusao', 1000]];
-  const result = {};
-  for (const [key, limit] of fields) {
-    const value = repairTextEncoding(String(values[key] || '').trim());
-    if (!value || value.length > limit) return null;
-    result[key] = value;
-  }
-  result.categoriaMotivoExclusao = category;
-  return result;
-}
-function markExclusionMetadata(record, user) {
-  if (!isExclusionDemand(record)) return;
-  record.usuarioSolicitante ||= user.nome;
-  record.setorSolicitante ||= user.setor || 'Não informado';
-  record.solicitanteId ||= user.id;
-  if (isCompletedDemandStatus(record.status) && !record.exclusaoConcluidaEm) {
-    record.exclusaoConcluidaPor = user.nome;
-    record.exclusaoConcluidaEm = now();
-  }
-}
 function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeHospitalDemand(values, user) {
   const text = (value, limit = 250) => repairTextEncoding(String(value || '').trim());
@@ -365,7 +299,7 @@ function sanitizeHospitalDemand(values, user) {
   if (!detailFields) return null;
   Object.assign(demand, detailFields);
   if (isExclusionDemand(demand)) {
-    const exclusion = sanitizeExclusionRequest(values);
+    const exclusion = sanitizeExclusionRequest(values, repairTextEncoding);
     if (!exclusion) return null;
     Object.assign(demand, exclusion);
   }
@@ -470,7 +404,6 @@ async function alertAssetCondition(resource, record, userId) {
   const assetName = resource === 'computadores' ? `Computador ${record.patrimonio}` : `${record.equipamento} (${record.patrimonio})`;
   await notifyAdmins(userId, `Alerta técnico: ${assetName}`, `${assetName} está marcado como “${record.avaliacao}”. Responsável: ${record.responsavel}. Verifique o cadastro na Central TI.`);
 }
-function isCompletedDemandStatus(status) { const normalized = String(status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return /conclu|finaliz|resolvid|encerr/.test(normalized); }
 function isOpenDemandStatus(status) { const normalized = String(status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return /abert|novo|pendente|aguard|solicit/.test(normalized); }
 function inProgressDemandStatus(statuses, fallback) { return statuses.find(status => /andamento|atendi|execuc|tratamento/i.test(String(status).normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) || fallback; }
 async function notifyTicketLifecycle(previous, record, actorId) {
@@ -582,34 +515,15 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/audit') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem consultar a auditoria.'); return respond(res, 200, { logs: await store.audits(url.searchParams.get('resource'), url.searchParams.get('recordId')) }); }
   if (req.method === 'GET' && pathname === '/api/reports') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem acessar relatórios e dados de auditoria.');
-    const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
-    const visible = Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource)); const data = Object.fromEntries(await Promise.all(visible.map(async resource => { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); return [resource, records]; })));
-    const modules = visible.map(resource => ({ resource, total: data[resource].length }));
-    const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao }))).concat((data.ramais || []).filter(record => record.funcionamento && record.funcionamento !== 'Bom funcionamento').map(record => ({ resource: 'ramais', item: `Ramal ${record.ramal}`, responsavel: record.responsavel, avaliacao: record.funcionamento })));
-    const demands = data.demandas || []; const demandStatus = ['Aberta', 'Em andamento', 'Concluída'].map(status => ({ status, total: demands.filter(record => record.status === status).length })); const lowStock = [];
-    const activePrograms = canAccess(user, 'programas') ? (await store.records('programas')).filter(record => record.status !== 'Cancelado' && Number.isSafeInteger(Number(record.valor)) && Number(record.valor) > 0) : [];
-    const programCosts = activePrograms.reduce((costs, record) => { const value = Number(record.valor); if (record.periodicidade === 'Mensal') costs.monthly += value; else costs.annual += value; return costs; }, { monthly: 0, annual: 0 });
-    programCosts.monthlyEquivalent = Math.round(programCosts.monthly + programCosts.annual / 12);
-    programCosts.annualEquivalent = programCosts.monthly * 12 + programCosts.annual;
-    const exclusionFilters = Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, url.searchParams.get(`exclusion${field[0].toUpperCase()}${field.slice(1)}`) || '']));
-    const exclusions = buildExclusionReport(demands, exclusionFilters);
-    const audit = user.perfil === 'admin' ? (await store.audits()).filter(inPeriod).slice(0, 100) : [];
-    return respond(res, 200, { generatedAt: now(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, lowStock, programCosts, activePrograms: activePrograms.length, exclusions, audit });
+    return respond(res, 200, await reportService.report(user, url, now));
   }
   if (req.method === 'GET' && pathname === '/api/reports/export') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem exportar relatórios.');
-    const start = url.searchParams.get('start'); const end = url.searchParams.get('end'); const inPeriod = record => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`); const rows = [['Relatório Central TI'], ['Período', start || 'Início', end || 'Hoje'], [], ['Módulo', 'Total']];
-    for (const resource of Object.keys(resourceDefinitions).filter(resource => canAccess(user, resource))) { let records = (await store.records(resource)).filter(inPeriod); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); rows.push([resource, records.length]); }
-    if (canAccess(user, 'programas')) { const programs = (await store.records('programas')).filter(record => record.status !== 'Cancelado' && Number.isSafeInteger(Number(record.valor)) && Number(record.valor) > 0); const costs = programs.reduce((total, record) => { if (record.periodicidade === 'Mensal') total.monthly += Number(record.valor); else total.annual += Number(record.valor); return total; }, { monthly: 0, annual: 0 }); rows.push([], ['Custos recorrentes de programas', 'Valor'], ['Custo mensal equivalente', formatProgramValue(Math.round(costs.monthly + costs.annual / 12))], ['Custo anual estimado', formatProgramValue(costs.monthly * 12 + costs.annual)]); }
-    const exclusionFilters = Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, url.searchParams.get(`exclusion${field[0].toUpperCase()}${field.slice(1)}`) || '']));
-    const demands = (await store.records('demandas')).filter(record => demandBelongsToUser(record, user) && inPeriod(record));
-    const exclusions = buildExclusionReport(demands, exclusionFilters);
-    rows.push([], ['Solicitações de exclusão'], ['Ticket', 'Atendimento', 'Paciente', 'Usuário solicitante', 'Setor', 'Tipo', 'Categoria do motivo', 'Motivo', 'Solicitada em', 'Status', 'Concluída por', 'Concluída em']);
-    for (const record of exclusions.records) rows.push([record.ticket || '', record.numeroAtendimento || '', record.nomePaciente || '', exclusionValue(record, 'user'), exclusionValue(record, 'sector'), exclusionValue(record, 'type'), exclusionValue(record, 'reason'), record.motivoExclusao || '', record.createdAt || '', record.status || '', record.exclusaoConcluidaPor || '', record.exclusaoConcluidaEm || '']);
-    rows.push([], ['Alertas técnicos', 'Avaliação']); for (const resource of ['computadores', 'equipamentos'].filter(resource => canAccess(user, resource))) for (const record of (await store.records(resource)).filter(inPeriod).filter(record => record.avaliacao && record.avaliacao !== 'Bom')) rows.push([resource === 'computadores' ? record.patrimonio : record.equipamento, record.avaliacao]);
-    const content = `\uFEFF${rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n')}`; res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="relatorio-central-ti.csv"', 'cache-control': 'no-store' }); return res.end(content);
+    const content = await reportService.exportCsv(user, url);
+    res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="relatorio-central-ti.csv"', 'cache-control': 'no-store' });
+    return res.end(content);
   }
-  const exportMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/export$/); if (req.method === 'GET' && exportMatch) { const resource = exportMatch[1]; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); if (!canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para esta área.'); const keys = resource === 'computadores' ? [...resourceDefinitions[resource], ...optionalResourceFields.computadores, 'dataSolicitacao', 'dataRetirada', 'dataDevolucao', 'checklist', 'observacoes'] : resource === 'materiais' ? [...resourceDefinitions[resource], 'observacoes'] : resourceDefinitions[resource]; let records = await store.records(resource); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); const content = csv(records, keys); res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="central-ti-${resource}.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(content); }
+  const exportMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/export$/); if (req.method === 'GET' && exportMatch) { const resource = exportMatch[1]; if (!resourceDefinitions[resource] || DISABLED_RESOURCES.has(resource)) return error(res, 404, 'Recurso não encontrado.'); if (!canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para esta área.'); const keys = resource === 'computadores' ? [...resourceDefinitions[resource], ...optionalResourceFields.computadores, 'dataSolicitacao', 'dataRetirada', 'dataDevolucao', 'checklist', 'observacoes'] : resource === 'materiais' ? [...resourceDefinitions[resource], 'observacoes'] : resourceDefinitions[resource]; let records = await store.records(resource); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); const content = csv(records, keys); res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="central-ti-${resource}.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(content); }
   const demandCommentMatch = pathname.match(/^\/api\/resources\/demandas\/([\w-]+)\/comments$/);
   if (req.method === 'POST' && demandCommentMatch) {
     if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para acessar chamados.');
@@ -641,7 +555,7 @@ async function api(req, res, url) {
     return respond(res, 200, { record: updated });
   }
   const match = pathname.match(/^\/api\/resources\/([a-z]+)(?:\/([\w-]+))?$/); if (match) {
-    const [, resource, recordId] = match; if (!resourceDefinitions[resource]) return error(res, 404, 'Recurso não encontrado.'); const mode = req.method === 'GET' ? (recordId ? 'consult' : 'list') : req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'update' : 'delete'; if (!canAccess(user, resource, mode)) return error(res, 403, 'Você não tem permissão para esta área.');
+    const [, resource, recordId] = match; if (!resourceDefinitions[resource] || DISABLED_RESOURCES.has(resource)) return error(res, 404, 'Recurso não encontrado.'); const mode = req.method === 'GET' ? (recordId ? 'consult' : 'list') : req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'update' : 'delete'; if (!canAccess(user, resource, mode)) return error(res, 403, 'Você não tem permissão para esta área.');
     if (req.method === 'GET') { let records = await store.records(resource); if (recordId) records = records.filter(record => record.id === recordId); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); if (resource === 'demandas') { const people = new Map((await store.users()).map(person => [person.id, person.nome])); for (const record of records) record.interacoes = (record.interacoes || []).map(item => ({ ...item, autorNome: people.get(item.autorId) || 'Usuário removido' })); } if (recordId && !records.length) return error(res, 404, 'Registro não encontrado.'); return respond(res, 200, { records }); }
     if (req.method === 'POST' && !recordId) {
       const body = await requestBody(req); if (resource === 'patrimonio') body.codigo = await nextPatrimonyCode(); if (resource === 'demandas' && hospitalOnly(user) && body.tipo !== 'externa') return error(res, 403, 'Este usuário pode abrir somente demandas hospitalares.'); if (resource === 'demandas' && hospitalOnly(user)) { body.solicitante = user.nome; body.status = 'Aberta'; body.tecnicoResponsavel = ''; body.prazoSla = ''; } const payload = resource === 'demandas' ? (hospitalOnly(user) ? sanitizeHospitalDemand(body, user) : sanitizeDemand(body)) : sanitize(body, resourceDefinitions[resource]);
@@ -655,7 +569,7 @@ async function api(req, res, url) {
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
-      if (resource === 'demandas') markExclusionMetadata(record, user);
+      if (resource === 'demandas') markExclusionMetadata(record, user, now);
       if (resource === 'demandas') { record.ticket = `TI-${String((await store.records('demandas')).length + 1).padStart(4, '0')}`; record.interacoes = note ? [{ id: id(), texto: note, autorId: user.id, criadoEm: now() }] : []; if (hospitalOnly(user)) record.solicitanteId = user.id; }
       await store.createRecord(resource, record); await syncAssetPatrimony(resource, record, user.id); await alertAssetCondition(resource, record, user.id); await log(user.id, 'criou registro', resource, record.id, { values: payload }); return respond(res, 201, { record });
     }
@@ -671,7 +585,7 @@ async function api(req, res, url) {
       const note = payload.novaObservacao; delete payload.novaObservacao;
       if (resource === 'demandas' && isExclusionDemand(payload)) {
         const merged = { ...previous, ...payload };
-        markExclusionMetadata(merged, user);
+        markExclusionMetadata(merged, user, now);
         Object.assign(payload, ...['usuarioSolicitante', 'setorSolicitante', 'solicitanteId', 'exclusaoConcluidaPor', 'exclusaoConcluidaEm'].filter(key => merged[key] !== undefined).map(key => ({ [key]: merged[key] })));
       }
       const record = await store.updateRecord(resource, recordId, payload, user.id); if (!record) return error(res, 404, 'Registro não encontrado.');

@@ -140,7 +140,7 @@ async function dialWithMicroSip(button, extension) {
       toast(status.message || 'MicroSIP não está instalado. Use o telefone fixo para realizar a ligação.');
       return;
     }
-    if (!confirm(`Abrir o MicroSIP para ligar ao ramal ${extension}?`)) return;
+    if (!await confirmDialog({ title: 'Abrir MicroSIP', message: `Deseja iniciar uma ligação para o ramal ${extension}?`, confirmLabel: 'Abrir MicroSIP' })) return;
     window.location.href = `centralti-microsip://call/${encodeURIComponent(extension)}`;
   } catch {
     toast('Não foi possível validar o MicroSIP. Use o telefone fixo para realizar a ligação.');

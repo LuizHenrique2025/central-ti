@@ -24,5 +24,8 @@ const access = {
 };
 
 const computerChecklist = ['Computador', 'Monitor', 'Teclado', 'Mouse', 'Leitor de cartão', 'Fone'];
+// O recurso continua definido para preservar registros históricos e permitir
+// reativação futura sem migração de dados.
+const disabledResources = ['materiais'];
 
-module.exports = { resourceDefinitions, optionalResourceFields, access, computerChecklist };
+module.exports = { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources };

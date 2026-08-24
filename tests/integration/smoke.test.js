@@ -75,6 +75,10 @@ test('entrega a interface e informa saúde do serviço', async () => {
   assert.equal(stylesheet.status, 200);
   assert.match(stylesheet.headers.get('content-type'), /text\/css/);
 
+  const configScript = await fetch(`${baseUrl}/assets/js/core/config.js`);
+  assert.equal(configScript.status, 200);
+  assert.match(await configScript.text(), /const modules/);
+
   const health = await fetch(`${baseUrl}/api/health`);
   assert.equal(health.status, 200);
   assert.deepEqual((await health.json()).ok, true);
@@ -130,6 +134,13 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(changedAdmin.status, 200);
 
+  const materials = await request('/api/resources/materiais', adminToken);
+  assert.equal(materials.status, 404);
+
+  const report = await request('/api/reports', adminToken);
+  assert.equal(report.status, 200);
+  assert.equal((await report.json()).modules.some(module => module.resource === 'materiais'), false);
+
   const incompleteDeletion = await request('/api/resources/demandas', adminToken, {
     method: 'POST',
     body: JSON.stringify({ titulo: 'Excluir atendimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Exclusão de atendimento', prioridade: 'Alta', status: 'Aberta' })
@@ -164,6 +175,9 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(rateUpdateRecord.codigoProcedimento, '10101012');
   assert.equal(rateUpdateRecord.convenio, 'Convênio teste');
   assert.equal(rateUpdateRecord.valorProcedimento, 'R$ 150,00');
+
+  const deletionCheck = await request(`/api/resources/demandas/${rateUpdateRecord.id}`, adminToken, { method: 'DELETE' });
+  assert.equal(deletionCheck.status, 200);
 
   const procedureInclusion = await request('/api/resources/demandas', adminToken, {
     method: 'POST',
