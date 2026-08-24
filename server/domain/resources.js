@@ -14,7 +14,7 @@ const optionalResourceFields = {
   computadores: ['numeroSerie', 'mac', 'dataSolicitacao', 'dataRetirada', 'dataDevolucao'],
   equipamentos: ['numeroSerie', 'dataRetirada', 'dataDevolucao'],
   ramais: ['email'],
-  demandas: ['categoria', 'assunto', 'outroDetalhe', 'descricao', 'tecnicoResponsavel', 'prazoSla']
+  demandas: ['categoria', 'assunto', 'outroDetalhe', 'descricao', 'tecnicoResponsavel', 'prazoSla', 'codigoProcedimento', 'convenio', 'valorProcedimento', 'tuss', 'tabela']
 };
 
 const access = {
