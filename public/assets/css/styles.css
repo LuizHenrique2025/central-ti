@@ -2388,6 +2388,7 @@ body:not(.light-theme) .demand-detail-heading span {
 .sidebar { background:linear-gradient(180deg,#171b20,#101317); box-shadow:inset -1px 0 #ffffff0a; }
 .sidebar .brand-mark, .sidebar-toggle, .avatar { color:#17191c; background:linear-gradient(145deg,var(--ct-metal-light),var(--ct-metal-mid)); box-shadow:inset 0 1px #fff8,0 4px 12px #0005; }
 .sidebar .nav .nav-icon { color:#aeb8c2; background:none; box-shadow:none; }
+.sidebar .nav button:not(.active) .nav-icon:has(.wifi-icon) { color:#aeb8c2; background:none; box-shadow:none; }
 .sidebar .nav button:hover { background:#ffffff0c; }
 .sidebar .nav button.active { color:#fff; background:linear-gradient(90deg,#2563eb38,#ffffff08); box-shadow:inset 3px 0 0 var(--ct-metal-light); }
 .sidebar .nav button.active .nav-icon { color:#f2f5f8; background:linear-gradient(145deg,var(--ct-metal-light),var(--ct-metal-mid)); border-radius:6px; box-shadow:inset 0 1px #fff8; }
@@ -2413,6 +2414,7 @@ body:not(.light-theme) .demand-detail-heading span {
 .light-theme .sidebar { background:linear-gradient(180deg,#f8fafc,#eef2f6); box-shadow:inset -1px 0 #d8e0e8; }
 .light-theme .sidebar .brand-mark,.light-theme .sidebar-toggle,.light-theme .avatar { color:#1e2935; background:linear-gradient(145deg,var(--ct-metal-light),var(--ct-metal-mid)); box-shadow:inset 0 1px #fff,0 3px 8px #1d2d3d22; }
 .light-theme .sidebar .nav .nav-icon { color:#627084; background:none; box-shadow:none; }
+.light-theme .sidebar .nav button:not(.active) .nav-icon:has(.wifi-icon) { color:#627084; background:none; box-shadow:none; }
 .light-theme .sidebar .nav button:hover { background:#e9f1fb; }
 .light-theme .sidebar .nav button.active { color:#183b68; background:#e7f0ff; box-shadow:inset 3px 0 0 var(--ct-blue); }
 .light-theme .sidebar .nav button.active .nav-icon { color:#263648; background:linear-gradient(145deg,var(--ct-metal-light),#b8c0c7); }
