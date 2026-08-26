@@ -2384,7 +2384,7 @@ body:not(.light-theme) .demand-detail-heading span {
 .wifi-icon { width:17px; height:17px; fill:currentColor; }
 
 /* Identidade Central TI: azul para ação, grafite para estrutura e prata só como assinatura. */
-:root { --ct-blue:#3b82f6; --ct-blue-strong:#2563eb; --ct-metal-dark:#363d44; --ct-metal-mid:#89939c; --ct-metal-light:#e2e7eb; --ct-radius:9px; }
+:root { --ct-blue:#2f6fb8; --ct-blue-strong:#245a96; --ct-metal-dark:#363d44; --ct-metal-mid:#89939c; --ct-metal-light:#e2e7eb; --ct-radius:9px; }
 .sidebar { background:linear-gradient(180deg,#171b20,#101317); box-shadow:inset -1px 0 #ffffff0a; }
 .sidebar .brand-mark, .sidebar-toggle, .avatar { color:#17191c; background:linear-gradient(145deg,var(--ct-metal-light),var(--ct-metal-mid)); box-shadow:inset 0 1px #fff8,0 4px 12px #0005; }
 .sidebar .nav .nav-icon { color:#aeb8c2; background:none; box-shadow:none; }
@@ -2402,7 +2402,7 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-card-sla { display:inline-flex; align-items:center; margin:4px 0 11px; padding:3px 7px; border:1px solid #415264; border-radius:5px; color:#b8cbe2; background:#1c2c3c; font-size:11px; font-weight:700; }
 .demand-card select { border:1px solid #3a4652; border-radius:6px; background:#252f39; }
 .add-record,.quick-add,.compose-button { border-radius:8px; color:#fff; background:linear-gradient(135deg,var(--ct-blue),var(--ct-blue-strong)); box-shadow:0 5px 13px #2563eb33; }
-.add-record:hover,.quick-add:hover,.compose-button:hover { color:#fff; background:linear-gradient(135deg,#60a5fa,var(--ct-blue-strong)); }
+.add-record:hover,.quick-add:hover,.compose-button:hover { color:#fff; background:linear-gradient(135deg,#4b82bd,var(--ct-blue-strong)); }
 .secondary,.icon-btn { border-radius:8px; }
 .section-toolbar { gap:14px; }
 .search { border-radius:8px; }
