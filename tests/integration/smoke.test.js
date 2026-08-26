@@ -292,6 +292,27 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const requesterMessages = await request('/api/messages', tokenA);
   assert.equal((await requesterMessages.json()).messages.some(message => message.subject.includes(demand.ticket)), true);
 
+  const firstMessage = await request('/api/messages', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ recipientId: userA.id, subject: 'Conversa de teste', body: 'Mensagem inicial da conversa.' })
+  });
+  assert.equal(firstMessage.status, 201);
+  const firstMessageData = (await firstMessage.json()).message;
+  assert.equal(firstMessageData.threadId, firstMessageData.id);
+  assert.equal(firstMessageData.replyToId, null);
+
+  const threadReply = await request('/api/messages', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ replyToId: firstMessageData.id, body: 'Resposta vinculada à mesma conversa.' })
+  });
+  assert.equal(threadReply.status, 201);
+  const threadReplyData = (await threadReply.json()).message;
+  assert.equal(threadReplyData.threadId, firstMessageData.threadId);
+  assert.equal(threadReplyData.replyToId, firstMessageData.id);
+  const threadedMessages = await request('/api/messages', adminToken);
+  const thread = (await threadedMessages.json()).messages.filter(message => message.threadId === firstMessageData.threadId);
+  assert.equal(thread.length, 2);
+
   const [listA, listB, listAdmin] = await Promise.all([
     request('/api/resources/demandas', tokenA),
     request('/api/resources/demandas', tokenB),
