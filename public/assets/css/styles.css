@@ -446,7 +446,6 @@ button { cursor:pointer; border:0; }
   gap:14px;
   padding:14px 0 14px 14px;
   background:#eef2f7;
-  transition:grid-template-columns .22s ease;
 }
 .shell.sidebar-collapsed {
   grid-template-columns:84px minmax(0,1fr);
@@ -1364,7 +1363,7 @@ body:not(.light-theme) .announcement small {
   color:#181b1f;
   background:linear-gradient(145deg,#fff,#aeb5bc);
   box-shadow:0 4px 10px #0008,inset 0 1px 0 #fff;
-  transition:left 180ms cubic-bezier(.4,0,.2,1),transform 180ms cubic-bezier(.4,0,.2,1),background .2s ease;
+  transition:transform var(--motion-enter) var(--motion-ease),background var(--motion-enter) var(--motion-ease);
 }
 .ui-switch .slider .circle::after {
   content:'☀';
@@ -1379,10 +1378,10 @@ body:not(.light-theme) .announcement small {
   border-radius:inherit;
   background:#fff9;
   opacity:0;
-  transition:opacity .3s ease,transform .3s ease;
+  transition:opacity var(--motion-enter) var(--motion-ease),transform var(--motion-enter) var(--motion-ease);
 }
 .ui-switch input:checked + .slider .circle {
-  left:calc(100% - var(--circle-diameter));
+  transform:translateX(calc(var(--switch-width) - var(--circle-diameter)));
   color:#f2f4f5;
   background:linear-gradient(145deg,#3b4046,#111317);
 }
@@ -2350,7 +2349,9 @@ body:not(.light-theme) .demand-detail-heading span {
   .modal-backdrop .modal,
   .system-confirmation,
   .system-confirmation-card,
-  .toast {
+  .toast,
+  .ui-switch .slider .circle,
+  .ui-switch .slider .circle::before {
     transition:none !important;
   }
 }
