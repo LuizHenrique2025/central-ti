@@ -2257,6 +2257,55 @@ body:not(.light-theme) .demand-detail-heading span {
 .light-theme .system-confirmation-actions .secondary { border-color:#d6dee6; background:#f3f6f9; color:#3e5064; }
 @media (max-width:540px) { .system-confirmation { align-items:end; padding:12px; } .system-confirmation-card { grid-template-columns:34px minmax(0,1fr); padding:18px; } .system-confirmation-icon { width:34px; height:34px; } .system-confirmation-actions { display:grid; grid-template-columns:1fr 1fr; } .system-confirmation-actions button { width:100%; } }
 
+/* Skeletons preservam a estrutura enquanto a API carrega, sem shimmer contínuo. */
+.loading-skeleton {
+  opacity:1;
+  transform:translateY(0);
+  transition:opacity var(--motion-enter) var(--motion-ease),transform var(--motion-enter) var(--motion-ease);
+}
+@starting-style {
+  .loading-skeleton {
+    opacity:0;
+    transform:translateY(6px);
+  }
+}
+.skeleton-line {
+  display:block;
+  width:var(--skeleton-width,100%);
+  height:10px;
+  border-radius:999px;
+  background:var(--line);
+  opacity:.8;
+}
+.skeleton-line + .skeleton-line { margin-top:12px; }
+.skeleton-card { display:grid; align-content:center; gap:13px; min-height:104px; }
+.skeleton-card .skeleton-line + .skeleton-line { margin-top:0; }
+.skeleton-panel { display:grid; align-content:center; gap:14px; min-height:190px; padding:22px; }
+.skeleton-panel .skeleton-line + .skeleton-line { margin-top:0; }
+.skeleton-toolbar { display:flex; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.skeleton-toolbar .skeleton-line { flex:0 1 var(--skeleton-width); }
+.skeleton-table { overflow:hidden; }
+.skeleton-table-head,
+.skeleton-table-body > div {
+  display:grid;
+  grid-template-columns:1.5fr 1fr 1fr .8fr;
+  gap:18px;
+  align-items:center;
+  padding:15px 17px;
+}
+.skeleton-table-head { background:color-mix(in srgb,var(--line) 45%,transparent); }
+.skeleton-table-body > div { min-height:50px; border-top:1px solid var(--line); }
+.skeleton-table-head .skeleton-line,
+.skeleton-table-body .skeleton-line { margin:0; }
+.skeleton-kanban .kanban-column { min-height:230px; }
+.skeleton-kanban .skeleton-card { min-height:78px; margin-top:12px; padding:12px; background:color-mix(in srgb,var(--line) 45%,transparent); border:1px solid var(--line); border-radius:9px; }
+@media (max-width:540px) {
+  .skeleton-table-head,
+  .skeleton-table-body > div { grid-template-columns:1.35fr 1fr .75fr; gap:10px; padding:13px; }
+  .skeleton-table-head .skeleton-line:nth-child(4),
+  .skeleton-table-body .skeleton-line:nth-child(4) { display:none; }
+}
+
 /* Continuidade funcional: superfícies entram rápido e saem ainda mais discretamente. */
 .modal-backdrop,
 .system-confirmation,
@@ -2296,6 +2345,7 @@ body:not(.light-theme) .demand-detail-heading span {
   transition-duration:var(--motion-exit);
 }
 @media (prefers-reduced-motion:reduce) {
+  .loading-skeleton,
   .modal-backdrop,
   .modal-backdrop .modal,
   .system-confirmation,
