@@ -2,6 +2,9 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const TOKEN = 'central-ti-token';
 const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, reportTab: 'overview', exclusionFilters: {}, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, firstAccess: null, loginStep: 'identifier', loginIdentifier: '', loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, ramalOrder: 'asc', mailFolder: 'inbox', selectedMessageId: null, mailQuery: '' };
 let navigationRequest = 0;
+let closingModal = false;
+let pendingAction = null;
+let knownUnreadMessageIds = null;
 let sidebarCollapsed = localStorage.getItem('central-ti-sidebar-collapsed') === 'true';
 let colorTheme = localStorage.getItem('central-ti-theme') === 'light' ? 'light' : 'dark';
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
@@ -9,6 +12,44 @@ const formatDate = value => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short
 const formatSla = value => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '';
 const formatCurrency = cents => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100);
 function formatCurrencyInput(input) { const digits = input.value.replace(/\D/g, ''); input.value = digits ? formatCurrency(Number(digits)) : ''; }
+function pendingLabel(control) {
+  const label = String(control?.textContent || '').trim().toLowerCase();
+  if (/export|csv|excel/.test(label)) return 'Exportando…';
+  if (/enviar|responder|publicar/.test(label)) return 'Enviando…';
+  if (/redefinir/.test(label)) return 'Redefinindo…';
+  if (/criar|abrir|incluir/.test(label)) return 'Criando…';
+  if (/remover|excluir|apagar/.test(label)) return 'Removendo…';
+  if (/atribuir|assumir/.test(label)) return 'Atribuindo…';
+  return 'Salvando…';
+}
+function beginPendingAction(control, options = {}) {
+  if (!(control instanceof HTMLButtonElement) || control.disabled || pendingAction) return null;
+  const originalHtml = control.innerHTML;
+  const originalBusy = control.getAttribute('aria-busy');
+  const label = options.label || pendingLabel(control);
+  control.disabled = true;
+  control.classList.add('action-pending');
+  control.setAttribute('aria-busy', 'true');
+  control.innerHTML = '<span class="button-spinner" aria-hidden="true"></span><span aria-live="polite">' + esc(label) + '</span>';
+  pendingAction = { control, originalHtml, originalBusy, form: Boolean(options.form) };
+  return pendingAction;
+}
+function releasePendingAction() {
+  if (!pendingAction) return;
+  const { control, originalHtml, originalBusy } = pendingAction;
+  pendingAction = null;
+  if (!control.isConnected) return;
+  control.disabled = false;
+  control.classList.remove('action-pending');
+  control.innerHTML = originalHtml;
+  if (originalBusy === null) control.removeAttribute('aria-busy');
+  else control.setAttribute('aria-busy', originalBusy);
+}
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+  beginPendingAction(event.submitter || form.querySelector('button[type="submit"], button:not([type])'), { form: true });
+}, true);
 const role = value => ({ admin: 'Administrador', ti: 'Equipe de TI', recepcao: 'Recepção', consulta: 'Consulta' })[value] || value;
 const permission = (resource, action) => { if (state.user?.perfil === 'admin') return true; const permissions = state.user?.permissions; const value = permissions?.[resource]; if (value) { const legacyRead = value.read !== false; return Boolean(value[action] ?? (action === 'list' || action === 'consult' ? legacyRead : action === 'create' || action === 'update' ? value.write : false)); } if (permissions && Object.keys(permissions).length) return false; return state.user?.perfil === 'ti' || (state.user?.perfil === 'consulta' && (action === 'list' || action === 'consult')); };
 const canWrite = resource => permission(resource, 'create') || permission(resource, 'update');
@@ -17,10 +58,18 @@ const canDelete = resource => permission(resource, 'delete');
 const canCreate = resource => permission(resource, 'create');
 const canUpdate = resource => permission(resource, 'update');
 async function api(url, options = {}) {
-  const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(state.token ? { authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
-  return data;
+  const tracksPendingAction = options.method && options.method !== 'GET';
+  if (tracksPendingAction && !pendingAction) beginPendingAction(document.activeElement);
+  try {
+    const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(state.token ? { authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
+    if (tracksPendingAction && pendingAction && !pendingAction.form) releasePendingAction();
+    return data;
+  } catch (error) {
+    if (tracksPendingAction) releasePendingAction();
+    throw error;
+  }
 }
 function tag(value) { const text = String(value || ''), normalized = text.toLowerCase(); const kind = /(bom|ativo|online|operacional|concluída|disponível|em uso)/.test(normalized) ? 'success' : /(ruim|manutenção|média|andamento|renovação)/.test(normalized) ? 'warning' : /(troca|crítica|alta|offline|indisponível|baixado|cancelado)/.test(normalized) ? 'danger' : ''; return `<span class="tag ${kind}">${esc(text)}</span>`; }
 function demandCardControl(card) {
@@ -40,7 +89,7 @@ function filteredDemandBoard(type) {
   const cards = state.records.filter(record => (record.tipo || 'interna') === type && matchesDemandSearch(record));
   const title = external ? 'Demandas Hospital' : 'Demandas Internas';
   const subtitle = external ? 'Hospital · solicitações de setores externos' : 'T.I. · atividades internas da equipe';
-  return `${header(title, subtitle)}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar por ticket, demanda ou solicitante..."/><div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" onclick="openDemand('${type}')">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" onclick="openDemandDetails('${card.id}')" ${canUpdate('demandas') ? 'draggable="true" ondragstart="dragDemand(event,\'' + card.id + '\')"' : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.categoria || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}${card.prazoSla ? ` · SLA: ${esc(card.prazoSla.split('-').reverse().join('/'))}` : ''}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`;
+  return `${header(title, subtitle)}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" oninput="setSearch(this.value)" placeholder="Pesquisar por ticket, demanda ou solicitante..."/><div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" onclick="openStatusManager()">⚙ Status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" onclick="openDemand('${type}')">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map((status, index) => `<section class="kanban-column" ondragover="event.preventDefault()" ondrop="dropDemand(event,'${esc(status)}')"><header><span class="kanban-dot dot-${index % 4}"></span><b>${esc(status)}</b><small>${cards.filter(card => card.status === status).length}</small></header><div class="kanban-cards">${cards.filter(card => card.status === status).map(card => `<article class="demand-card" onclick="openDemandDetails('${card.id}')" ${canUpdate('demandas') ? 'draggable="true" ondragstart="dragDemand(event,\'' + card.id + '\')"' : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.categoria || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(card.prazoSla.split('-').reverse().join('/'))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || '<div class="kanban-empty">Arraste uma demanda para cá</div>'}</div></section>`).join('')}</div>`;
 }
 function ramalFilterCategory(value) {
   const sector = String(value || '').trim();
@@ -99,7 +148,36 @@ function exclusionReportPage(exclusions) {
   return `${exclusionFilters(exclusions)}${exclusionAuditTable(exclusions)}<section class="metrics exclusion-metrics">${[['Solicitações', exclusions.total], ['Concluídas', exclusions.completed], ['Pendentes', exclusions.pending], ['Recusadas / canceladas', exclusions.declined]].map(item => `<div class="metric"><div class="metric-name">${item[0]}</div><div class="metric-number">${item[1]}</div></div>`).join('')}</section><div class="report-grid">${reportBreakdown('Usuários que mais solicitam', exclusions.users)}${reportBreakdown('Setores que mais solicitam', exclusions.sectors)}${reportBreakdown('Tipos de exclusão', exclusions.types)}${reportBreakdown('Categorias de motivo', exclusions.reasons)}</div><section class="panel exclusion-chart"><div class="panel-heading"><div><h3>Evolução das exclusões por mês</h3><div class="panel-subtitle">Dados prontos para análise no Power BI.</div></div></div>${exclusions.months.length ? `<div class="bar-list">${exclusions.months.map(item => `<div class="bar-row"><span>${esc(monthName(item.month))}</span><div><i style="width:${Math.max(4, Math.round(item.total / max * 100))}%"></i></div><b>${item.total}</b></div>`).join('')}</div>` : '<div class="empty">Sem exclusões no período.</div>'}</section><div class="report-grid">${reportBreakdown('Exclusões por status', exclusions.statuses)}${reportBreakdown('Reincidência por usuário e motivo', exclusions.recurring)}</div>`;
 }
 function reportPage() { const report = state.report || { modules: [], alerts: [], demandStatus: [], total: 0, exclusions: { total: 0, completed: 0, pending: 0, declined: 0, users: [], sectors: [], types: [], reasons: [], statuses: [], months: [], recurring: [], records: [], filters: {} }, audit: [] }; const activeTab = state.reportTab === 'materials' ? 'overview' : state.reportTab; const tabs = [['overview', 'Visão Geral'], ['demands', 'Demandas'], ['exclusions', 'Exclusões'], ['inventory', 'Inventário'], ['audit', 'Auditoria']]; const content = activeTab === 'exclusions' ? exclusionReportPage(report.exclusions) : activeTab === 'demands' ? `<section class="metrics">${report.demandStatus.map(item => `<div class="metric"><div class="metric-name">${esc(item.status)}</div><div class="metric-number">${item.total}</div></div>`).join('')}</section>${reportTable('Demandas por status', report.demandStatus.map(item => ({ label: item.status, total: item.total })) )}` : activeTab === 'inventory' ? `<div class="report-grid">${reportTable('Inventário por módulo', report.modules.filter(item => ['computadores', 'equipamentos', 'patrimonio', 'ramais', 'redes'].includes(item.resource)).map(item => ({ label: modules[item.resource]?.name || item.resource, total: item.total })))}${reportTable('Alertas técnicos', report.alerts.map(item => ({ label: `${item.item} · ${item.avaliacao}`, total: 1 })) )}</div>` : activeTab === 'audit' ? `<section class="panel table-panel"><div class="panel-heading"><h3>Auditoria do período</h3></div>${report.audit?.length ? `<table class="data-table"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th></tr></thead><tbody>${report.audit.map(item => `<tr><td>${item.createdAt ? esc(formatDate(item.createdAt)) : '—'}</td><td>${esc(item.userName || 'Usuário removido')}</td><td>${esc(item.action || '—')}</td><td>${esc(item.resource || 'Sistema')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Sem registros de auditoria no período.</div>'}</section>` : reportOverview(report); return `${header('Relatórios', 'Análise e auditoria')}<div class="report-actions"><label>De<input type="date" value="${esc(state.start)}" onchange="setPeriod(this.value,state.end)"/></label><label>Até<input type="date" value="${esc(state.end)}" onchange="setPeriod(state.start,this.value)"/></label><button class="secondary" onclick="exportReport()">⇩ CSV / Excel</button><button class="add-record" onclick="window.print()">🖨 Gerar PDF</button></div><nav class="report-tabs">${tabs.map(([id, label]) => `<button class="${activeTab === id ? 'active' : ''}" onclick="setReportTab('${id}')">${esc(label)}</button>`).join('')}</nav>${content}`; }
-function emailPage() { const mine = state.user.id, folders = { inbox: state.messages.filter(message => message.recipient.id === mine && !message.recipientDeletedAt), sent: state.messages.filter(message => message.sender.id === mine && !message.senderDeletedAt), trash: state.messages.filter(message => (message.recipient.id === mine && message.recipientDeletedAt) || (message.sender.id === mine && message.senderDeletedAt)) }; const labels = { inbox: 'Caixa de entrada', sent: 'Enviadas', trash: 'Apagadas' }; const icons = { inbox: '✉', sent: '↗', trash: '♲' }; const unread = folders.inbox.filter(message => !message.readAt).length; const filtered = folders[state.mailFolder].filter(message => `${message.sender.nome} ${message.recipient.nome} ${message.subject} ${message.body}`.toLowerCase().includes(state.mailQuery.toLowerCase())); return `${header('E-mail interno', 'Comunicação entre usuários')}<section class="webmail"><aside class="mail-folders"><button class="compose-button" onclick="compose()">✎ <span>Escrever</span></button>${[['inbox', unread], ['sent', folders.sent.length], ['trash', folders.trash.length]].map(([folder, count]) => `<button class="folder ${state.mailFolder === folder ? 'active' : ''}" onclick="setMailFolder('${folder}')"><span>${icons[folder]} ${labels[folder]}</span><b>${count || ''}</b></button>`).join('')}<div class="mail-note">Mensagens internas são entregues diretamente aos usuários cadastrados.</div></aside><section class="mail-list panel"><div class="mail-list-tools"><input value="${esc(state.mailQuery)}" oninput="setMailSearch(this.value)" placeholder="Pesquisar mensagens"/><button class="icon-btn" title="Atualizar" onclick="load()">↻</button></div><div class="mail-list-title">${labels[state.mailFolder]} <span>${filtered.length}</span></div>${filtered.map(message => `<button class="mail-item ${!message.readAt && message.recipient.id === mine ? 'unread' : ''}" onclick="readMessage('${message.id}')"><span class="mail-avatar">${esc((message.sender.id === mine ? message.recipient.nome : message.sender.nome).slice(0, 1).toUpperCase())}</span><span class="mail-item-content"><span class="mail-item-top"><b>${esc(message.sender.id === mine ? `Para: ${message.recipient.nome}` : message.sender.nome)}</b><time>${formatDate(message.createdAt)}</time></span><span class="mail-subject">${esc(message.subject)}</span><span class="mail-preview">${esc(message.body)}</span></span></button>`).join('') || '<div class="empty">Nenhuma mensagem nesta caixa.</div>'}</section></section>`; }
+function messageThreadId(message) { return message.threadId || message.id; }
+function visibleMessageForMe(message, mine) { return (message.recipient.id === mine && !message.recipientDeletedAt) || (message.sender.id === mine && !message.senderDeletedAt); }
+function canonicalMailSubject(subject) { return String(subject || '').replace(/^(?:re:\s*)+/i, '').trim() || 'Sem assunto'; }
+function mailThreads(messages, mine) {
+  const threads = new Map();
+  for (const message of messages) {
+    const key = messageThreadId(message);
+    if (!threads.has(key)) threads.set(key, []);
+    threads.get(key).push(message);
+  }
+  return [...threads.entries()].map(([id, entries]) => ({ id, messages: entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt)) }));
+}
+function emailPage() {
+  const mine = state.user.id;
+  const folders = {
+    inbox: state.messages.filter(message => message.recipient.id === mine && !message.recipientDeletedAt),
+    sent: state.messages.filter(message => message.sender.id === mine && !message.senderDeletedAt),
+    trash: state.messages.filter(message => (message.recipient.id === mine && message.recipientDeletedAt) || (message.sender.id === mine && message.senderDeletedAt))
+  };
+  const labels = { inbox: 'Caixa de entrada', sent: 'Enviadas', trash: 'Apagadas' }, icons = { inbox: '✉', sent: '↗', trash: '♲' };
+  const unread = folders.inbox.filter(message => !message.readAt).length;
+  const visibleThreads = mailThreads(folders[state.mailFolder], mine).map(thread => {
+    const allMessages = state.messages.filter(message => messageThreadId(message) === thread.id && visibleMessageForMe(message, mine)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const latest = thread.messages[thread.messages.length - 1];
+    const participant = latest.sender.id === mine ? latest.recipient : latest.sender;
+    const unreadCount = allMessages.filter(message => message.recipient.id === mine && !message.readAt).length;
+    return { ...thread, allMessages, latest, participant, unreadCount };
+  }).filter(thread => `${thread.participant.nome} ${thread.latest.subject} ${thread.allMessages.map(message => message.body).join(' ')}`.toLowerCase().includes(state.mailQuery.toLowerCase())).sort((a, b) => b.latest.createdAt.localeCompare(a.latest.createdAt));
+  return `${header('E-mail interno', 'Conversas entre usuários')}<section class="webmail"><aside class="mail-folders"><button class="compose-button" onclick="compose()">✎ <span>Escrever</span></button>${[['inbox', unread], ['sent', 0], ['trash', 0]].map(([folder, count]) => `<button class="folder ${state.mailFolder === folder ? 'active' : ''}" onclick="setMailFolder('${folder}')"><span>${icons[folder]} ${labels[folder]}</span><b>${count || ''}</b></button>`).join('')}<div class="mail-note">As respostas ficam agrupadas na mesma conversa.</div></aside><section class="mail-list panel"><div class="mail-list-tools"><input value="${esc(state.mailQuery)}" oninput="setMailSearch(this.value)" placeholder="Pesquisar conversas"/><button class="icon-btn" title="Atualizar" onclick="load()">↻</button></div><div class="mail-list-title">${labels[state.mailFolder]}</div>${visibleThreads.map(thread => `<button class="mail-item ${thread.unreadCount ? 'unread' : ''}" onclick="readThread('${thread.id}')"><span class="mail-avatar">${esc(thread.participant.nome.slice(0, 1).toUpperCase())}</span><span class="mail-item-content"><span class="mail-item-top"><b>${esc(thread.latest.sender.id === mine ? `Para: ${thread.participant.nome}` : thread.participant.nome)}</b><time>${formatDate(thread.latest.createdAt)}</time></span><span class="mail-subject">${esc(canonicalMailSubject(thread.latest.subject))}${thread.unreadCount ? ` <small class="mail-thread-count">${thread.unreadCount}</small>` : ''}</span><span class="mail-preview">${esc(thread.latest.body)}</span></span></button>`).join('') || '<div class="empty">Nenhuma conversa nesta caixa.</div>'}</section></section>`;
+}
 function usersPage() {
   const filters = { query: state.resourceFilters['usuarios-query'] || '', sector: state.resourceFilters['usuarios-sector'] || '', status: state.resourceFilters['usuarios-status'] || '', profile: state.resourceFilters['usuarios-profile'] || '' };
   const accessStatus = user => user.activationStatus === 'pre-cadastro' ? 'Pré-cadastro' : user.activationStatus === 'aguardando aprovação' ? 'Aguardando aprovação' : user.active === false ? 'Desativado' : 'Ativo';
@@ -184,13 +262,23 @@ function demandDetailsModal(record) {
   ].map(([label, value, html]) => `<div><dt>${esc(label)}</dt><dd>${html ? value : esc(value)}</dd></div>`).join('');
   return `<div class="modal-backdrop" onclick="closeBack(event)"><section class="modal ticket-details-modal"><div class="modal-header ticket-details-head"><div><span class="ticket-reference">${esc(record.ticket || 'Chamado')}</span><h2>${esc(record.titulo)}</h2></div><button type="button" class="close" onclick="closeModal(true)">×</button></div><div class="ticket-details-layout"><main><section class="ticket-description"><h3>Descrição enviada pelo solicitante</h3><p>${esc(record.descricao || 'Nenhuma descrição informada.').replace(/\n/g, '<br/>')}</p></section><section class="ticket-activity"><h3>Atividade</h3><div class="ticket-conversation">${interactions.length ? interactions.map(item => `<article class="ticket-comment ${item.autorId === state.user.id ? 'mine' : ''}"><div class="comment-avatar">${esc((item.autorNome || 'U').slice(0, 2).toUpperCase())}</div><div><header><b>${esc(item.autorNome || 'Usuário')}</b><time>${formatDate(item.criadoEm)}</time></header><p>${esc(item.texto).replace(/\n/g, '<br/>')}</p></div></article>`).join('') : '<div class="ticket-no-comments">Ainda não há comentários. Envie a primeira resposta abaixo.</div>'}</div><form class="ticket-reply" onsubmit="sendDemandComment(event,'${record.id}')"><textarea name="text" required maxlength="3000" rows="3" placeholder="Adicionar comentário..."></textarea><button class="primary">Responder</button></form></section></main><aside class="ticket-information"><h3>Informações da demanda</h3><dl>${information}</dl>${canUpdate('demandas') && !record.tecnicoResponsavel && !/conclu|finaliz|resolvid|encerr/i.test(String(record.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')) ? `<button class="primary ticket-assume" onclick="assignDemandToMe('${record.id}')">Assumir chamado</button>` : ''}${canUpdate('demandas') ? `<button class="secondary ticket-edit" onclick="openRecord('demandas','${record.id}')">Editar chamado</button>` : ''}${canDelete('demandas') ? `<button class="danger-link ticket-delete" onclick="deleteDemandFromDetails('${record.id}')">Excluir chamado</button>` : ''}</aside></div></section></div>`;
 }
+function mailThreadMessage(message, mine) { return `<article class="mail-thread-message ${message.sender.id === mine ? 'mine' : ''}"><header><span><b>${esc(message.sender.id === mine ? 'Você' : message.sender.nome)}</b>${message.sender.id === mine ? '<small>Enviado por você</small>' : ''}</span><time>${formatDate(message.createdAt)}</time></header><p>${esc(message.body).replace(/\n/g, '<br/>')}</p></article>`; }
+function mailThreadSummary(person, count) { return `${person.nome} · ${count} mensagem${count === 1 ? '' : 'ens'}`; }
 function modal() { if (!state.modal) return ''; if (state.modal.type === 'demand-details') return demandDetailsModal(state.modal.record); if (state.modal.type === 'record') { const resource = state.modal.resource, record = state.modal.record, module = modules[resource]; if (resource === 'demandas') return demandModal(record); return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-wide" onsubmit="saveRecord(event,'${resource}','${record?.id || ''}')"><div class="modal-header"><h2>${record ? 'Editar' : 'Novo cadastro'} · ${module.name}</h2><button type="button" class="close" onclick="closeModal()">×</button></div>${resource === 'computadores' ? '<p class="modal-intro">Cadastre o IP para localizar a máquina na rede. As datas são opcionais e registram o ciclo de solicitação, entrega e devolução.</p>' : ''}<div class="two-col">${module.fields.map(item => field(item, record)).join('')}</div>${resource === 'computadores' ? `<fieldset class="checklist"><legend>Checklist do kit entregue</legend><div class="checklist-grid">${KIT.map(item => `<label class="check-item"><input type="checkbox" name="checklist" value="${item}" ${(record?.checklist || []).includes(item) ? 'checked' : ''}/><span>✓</span>${item}</label>`).join('')}</div></fieldset>` : ''}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar</button></div></form></div>`; }
   if (state.modal.type === 'pre-registration') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="savePreRegistration(event)"><div class="modal-header"><h2>Pré-cadastro de colaborador</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">A pessoa fará o primeiro acesso usando primeiro nome e CPF. Depois completará os próprios dados e aguardará sua ativação.</p><label class="field">Nome completo<input name="nome" required maxlength="120"/></label><label class="field">CPF<input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"/></label><label class="field">Setor<input name="setor" required maxlength="120" placeholder="Ex.: Auditoria Faturamento"/></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Criar pré-cadastro</button></div></form></div>`;
   if (state.modal.type === 'computer-groups') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="saveComputerGroups(event)"><div class="modal-header"><h2>Grupos de computadores</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">Cadastre os grupos que organizam as máquinas, como Faturamento, Eletivas e Laboratório. Grupos em uso não podem ser removidos.</p><div id="group-fields">${state.computerGroups.map(group => `<label class="status-editor"><input name="group" value="${esc(group)}" required maxlength="50"/><button type="button" onclick="this.parentElement.remove()">×</button></label>`).join('')}</div><button type="button" class="secondary" onclick="addComputerGroup()">+ Adicionar grupo</button><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar grupos</button></div></form></div>`;
   if (state.modal.type === 'statuses') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="saveStatuses(event)"><div class="modal-header"><h2>Status das demandas</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">Edite as colunas. Status com demandas não podem ser removidos.</p><div id="status-fields">${state.statuses.map(status => `<label class="status-editor"><input name="status" value="${esc(status)}" required maxlength="50"/><button type="button" onclick="this.parentElement.remove()">×</button></label>`).join('')}</div><button type="button" class="secondary" onclick="addStatus()">+ Adicionar status</button><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar status</button></div></form></div>`;
   if (state.modal.type === 'announcement') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="saveAnnouncement(event)"><div class="modal-header"><h2>Novo comunicado</h2><button type="button" class="close" onclick="closeModal()">×</button></div><label class="field">Título<input name="title" required maxlength="120" placeholder="Ex.: Manutenção programada"/></label><label class="field">Comunicado<textarea name="body" required rows="7" maxlength="2000" placeholder="Escreva a informação que todos devem visualizar."></textarea></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Publicar</button></div></form></div>`;
-  if (state.modal.type === 'mail') { const reply = state.modal.reply; return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="sendMail(event)"><div class="modal-header"><h2>${reply ? 'Responder mensagem' : 'Nova mensagem interna'}</h2><button type="button" class="close" onclick="closeModal()">×</button></div><label class="field">Para<select name="recipientId" required><option value="">Selecione</option>${state.users.filter(user => user.id !== state.user.id).map(user => `<option value="${user.id}" ${user.id === reply?.recipientId ? 'selected' : ''}>${esc(user.nome)} · ${esc(user.email)}</option>`).join('')}</select></label><label class="field">Assunto<input name="subject" required maxlength="160" value="${esc(reply?.subject || '')}"/></label><label class="field">Mensagem<textarea name="body" required rows="6" maxlength="5000" autofocus></textarea></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Enviar</button></div></form></div>`; }
-  if (state.modal.type === 'mail-read') { const message = state.messages.find(item => item.id === state.modal.messageId); if (!message) return ''; const mine = state.user.id, trashed = (message.recipient.id === mine && message.recipientDeletedAt) || (message.sender.id === mine && message.senderDeletedAt); const canReply = message.sender.id !== mine && !trashed; return `<div class="modal-backdrop" onclick="closeBack(event)"><section class="modal modal-wide mail-message-modal"><div class="modal-header"><div><h2>${esc(message.subject)}</h2><p class="modal-intro">${message.sender.id === mine ? `Para: ${esc(message.recipient.nome)}` : `De: ${esc(message.sender.nome)}`} · ${formatDate(message.createdAt)}</p></div><button type="button" class="close" onclick="closeModal(true)">×</button></div><article class="mail-body">${esc(message.body).replace(/\n/g, '<br/>')}</article><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal(true)">Fechar</button>${canReply ? `<button type="button" class="secondary" onclick="replyMail('${message.id}')">↩ Responder</button>` : ''}${trashed ? '' : `<button type="button" class="danger-link" onclick="deleteMail('${message.id}')">Mover para apagadas</button>`}</div></section></div>`; }
+  if (state.modal.type === 'mail') return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="sendMail(event)"><div class="modal-header"><h2>Nova mensagem interna</h2><button type="button" class="close" onclick="closeModal()">×</button></div><label class="field">Para<select name="recipientId" required><option value="">Selecione</option>${state.users.filter(user => user.id !== state.user.id).map(user => `<option value="${user.id}">${esc(user.nome)} · ${esc(user.email)}</option>`).join('')}</select></label><label class="field">Assunto<input name="subject" required maxlength="160"/></label><label class="field">Mensagem<textarea name="body" required rows="6" maxlength="5000" autofocus></textarea></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Enviar</button></div></form></div>`;
+  if (state.modal.type === 'mail-thread') {
+    const mine = state.user.id;
+    const messages = state.messages.filter(message => messageThreadId(message) === state.modal.threadId && visibleMessageForMe(message, mine)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (!messages.length) return '';
+    const latest = messages[messages.length - 1];
+    const correspondent = latest.sender.id === mine ? latest.recipient : latest.sender;
+    const isTrash = state.mailFolder === 'trash';
+    return `<div class="modal-backdrop" onclick="closeBack(event)"><section class="modal modal-wide mail-thread-modal"><div class="modal-header mail-thread-header"><div class="mail-thread-person"><span class="mail-thread-avatar">${esc(correspondent.nome.slice(0, 1).toUpperCase())}</span><div><h2>${esc(canonicalMailSubject(latest.subject))}</h2><p class="modal-intro" data-mail-thread-summary>${esc(mailThreadSummary(correspondent, messages.length))}</p></div></div><button type="button" class="close" aria-label="Fechar conversa" onclick="closeModal(true)">×</button></div><div class="mail-thread-history" aria-label="Histórico da conversa">${messages.map(message => mailThreadMessage(message, mine)).join('')}</div>${isTrash ? '' : `<form class="mail-thread-reply" onsubmit="sendMail(event,'${latest.id}','${state.modal.threadId}')"><label class="field">Responder<textarea name="body" required rows="3" maxlength="5000" autofocus placeholder="Escreva sua resposta..."></textarea></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal(true)">Fechar</button><button class="primary">Responder</button></div></form>`}</section></div>`;
+  }
   if (state.modal.type === 'password-reset') { const target = state.modal.user; return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal" onsubmit="resetUserPassword(event,'${target.id}')"><div class="modal-header"><h2>Redefinir senha</h2><button type="button" class="close" onclick="closeModal()">×</button></div><p class="modal-intro">Defina uma senha temporária para <b>${esc(target.nome)}</b> · ${esc(target.email || target.login || 'usuário sem e-mail')}. As sessões atuais serão encerradas e a troca será obrigatória no próximo acesso.</p><label class="field">Senha temporária<input name="password" type="password" required minlength="8" autocomplete="new-password" autofocus/></label><label class="field">Confirmar senha temporária<input name="passwordConfirmation" type="password" required minlength="8" autocomplete="new-password"/></label><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Redefinir senha</button></div></form></div>`; }
   if (state.modal.type === 'permissions') { const target = state.modal.user, permissions = target.permissions || {}; return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-permissions" onsubmit="savePermissions(event,'${target.id}')"><div class="modal-header"><div><h2>Permissões de ${esc(target.nome)}</h2><p class="modal-intro">Marque exatamente o que este usuário pode fazer.</p></div><button type="button" class="close" onclick="closeModal()">×</button></div>${permissionTable(permissions)}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Salvar permissões</button></div></form></div>`; }
   return `<div class="modal-backdrop" onclick="closeBack(event)"><form class="modal modal-permissions" onsubmit="saveUser(event)"><div class="modal-header"><h2>Novo usuário</h2><button type="button" class="close" onclick="closeModal()">×</button></div><div class="two-col"><label class="field">Nome<input name="nome" required/></label><label class="field">E-mail<input name="email" type="email" required/></label><label class="field">Perfil<select name="perfil"><option value="consulta">Consulta</option><option value="ti">Equipe de TI</option><option value="admin">Administrador</option></select></label><label class="field">Senha inicial<input name="senha" type="password" required minlength="12"/></label></div>${permissionTable({})}<div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">Cancelar</button><button class="primary">Criar usuário</button></div></form></div>`; }
@@ -203,9 +291,46 @@ function standardLoginPage() {
 }
 function loginPage() { if (state.firstAccess?.token) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="completeFirstAccess(event)"><h2>Complete seu cadastro</h2><p>Olá, <b>${esc(state.firstAccess.nome)}</b>. Informe seus dados e crie sua senha.</p><label class="field">Data de nascimento<input name="dataNascimento" type="date" required/></label><label class="field">E-mail<input name="email" type="email" required/></label><label class="field">Login<input name="login" required minlength="3" maxlength="50" placeholder="Ex.: suseli"/></label><label class="field">Senha<input name="senha" type="password" required minlength="12"/></label><button class="primary">Concluir cadastro</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.firstAccess) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="identifyFirstAccess(event)"><h2>Primeiro acesso</h2><p>Informe seu primeiro nome e CPF para localizar seu pré-cadastro.</p><label class="field">Primeiro nome<input name="nome" required maxlength="60"/></label><label class="field">CPF<input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"/></label><button class="primary">Validar dados</button><button type="button" class="login-back" onclick="cancelFirstAccess()">Voltar</button></form></section></div>`; if (state.pending) return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div></section><section class="login-panel"><form class="login-card" onsubmit="verifyCode(event)"><h2>Confirme seu acesso</h2><p>Enviamos um código de seis dígitos para <b>${esc(state.pending.email)}</b>.</p><label class="field">Código<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus/></label><button class="primary">Validar e entrar</button><button type="button" class="login-back" onclick="cancelCode()">Voltar</button></form></section></div>`; return standardLoginPage(); }
 function passwordPage() { return `<div class="login-page"><section class="login-brand"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><div class="login-copy"><h1>Proteja seu acesso.</h1><p>Antes de usar o sistema, defina uma senha pessoal e segura.</p></div></section><section class="login-panel"><form class="login-card" onsubmit="changeOwnPassword(event)"><h2>Troca obrigatória de senha</h2><p>Use 8+ caracteres, maiúscula, minúscula, número e símbolo.</p><label class="field">Senha atual<input name="currentPassword" type="password" required autofocus/></label><label class="field">Nova senha<input name="newPassword" type="password" required minlength="8"/></label><button class="primary">Salvar senha e entrar</button></form></section></div>`; }
-function render({ preserveScroll = false } = {}) { const previousContent = preserveScroll ? document.querySelector('#app .content') : null; const scrollTop = previousContent?.scrollTop || 0; if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); return; } const page = state.loading ? '<div class="loading">Atualizando dados…</div>' : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : !isModuleEnabled(state.page) ? moduleDisabledPage(state.page) : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; if (preserveScroll) document.querySelector('#app .content')?.scrollTo({ top: scrollTop }); }
+function render({ preserveScroll = false } = {}) { if (closingModal) return; const previousContent = preserveScroll ? document.querySelector('#app .content') : null; const scrollTop = previousContent?.scrollTop || 0; if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); return; } const page = state.loading ? `<div class="loading-skeleton">${loadingPage()}</div>` : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : !isModuleEnabled(state.page) ? moduleDisabledPage(state.page) : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; if (preserveScroll) document.querySelector('#app .content')?.scrollTo({ top: scrollTop }); }
+function loadingPage() {
+  const pages = {
+    dashboard: ['Visão geral', 'Carregando indicadores e comunicados'],
+    demandas: ['Demandas', 'Carregando quadro de trabalho'],
+    'demandas-internas': ['Demandas internas', 'Carregando quadro de trabalho'],
+    'demandas-externas': ['Demandas externas', 'Carregando quadro de trabalho'],
+    relatorios: ['Relatórios', 'Carregando análise e auditoria'],
+    email: ['E-mail interno', 'Carregando mensagens'],
+    usuarios: ['Usuários', 'Carregando acessos e permissões'],
+    localizacao: ['Localizar equipamentos', 'Carregando inventário']
+  };
+  const [title, subtitle] = pages[state.page] || [modules[state.page]?.name || 'Central TI', 'Carregando informações'];
+  const line = width => `<span class="skeleton-line" style="--skeleton-width:${width}"></span>`;
+  const table = `<section class="panel table-panel skeleton-table"><div class="skeleton-table-head">${line('32%')}${line('18%')}${line('18%')}${line('14%')}</div><div class="skeleton-table-body">${Array.from({ length: 6 }, () => `<div>${line('26%')}${line('22%')}${line('19%')}${line('15%')}</div>`).join('')}</div></section>`;
+  if (state.page === 'dashboard') return `${header(title, subtitle)}<section class="metrics skeleton-metrics">${Array.from({ length: 4 }, () => `<div class="metric skeleton-card">${line('48%')}${line('28%')}</div>`).join('')}</section><section class="dashboard-grid"><div class="panel skeleton-panel">${line('38%')}${line('72%')}${line('60%')}</div><div class="panel skeleton-panel">${line('42%')}${line('84%')}${line('58%')}</div></section>`;
+  if (state.page.startsWith('demandas')) return `${header(title, subtitle)}<div class="skeleton-toolbar">${line('220px')}${line('130px')}</div><section class="kanban skeleton-kanban">${Array.from({ length: 3 }, () => `<div class="kanban-column">${line('42%')}<div class="skeleton-card">${line('82%')}${line('54%')}</div><div class="skeleton-card">${line('70%')}${line('46%')}</div></div>`).join('')}</section>`;
+  if (state.page === 'relatorios') return `${header(title, subtitle)}<div class="skeleton-toolbar">${line('180px')}${line('150px')}${line('130px')}</div><section class="metrics skeleton-metrics">${Array.from({ length: 4 }, () => `<div class="metric skeleton-card">${line('50%')}${line('26%')}</div>`).join('')}</section>${table}`;
+  return `${header(title, subtitle)}<div class="skeleton-toolbar">${line('260px')}${line('130px')}</div>${table}`;
+}
 function unreadCount(messages) { return messages.filter(message => message.recipient?.id === state.user?.id && !message.readAt && !message.recipientDeletedAt).length; }
-async function refreshUnreadMessages(renderWhenChanged = false) { if (!state.token || !state.user) return false; try { const mail = await api('/api/messages'); const unread = unreadCount(mail.messages || []); const changed = state.unreadMessages !== unread; if (changed) { state.unreadMessages = unread; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); } return changed; } catch (_) { return false; /* A atualização do aviso não deve interromper a tela atual. */ } }
+async function refreshUnreadMessages(renderWhenChanged = false) {
+  if (!state.token || !state.user) return false;
+  try {
+    const mail = await api('/api/messages');
+    const unreadMessages = (mail.messages || []).filter(message => message.recipient?.id === state.user.id && !message.readAt && !message.recipientDeletedAt);
+    const unreadIds = new Set(unreadMessages.map(message => message.id));
+    if (knownUnreadMessageIds) {
+      const newMessages = unreadMessages.filter(message => !knownUnreadMessageIds.has(message.id));
+      if (newMessages.length) {
+        const newest = newMessages.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        toast(newMessages.length === 1 ? `Nova mensagem de ${newest.sender.nome}: ${canonicalMailSubject(newest.subject)}` : `Você recebeu ${newMessages.length} novas mensagens.`);
+      }
+    }
+    knownUnreadMessageIds = unreadIds;
+    const changed = state.unreadMessages !== unreadMessages.length;
+    if (changed) { state.unreadMessages = unreadMessages.length; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); }
+    return changed;
+  } catch (_) { return false; /* A atualização do aviso não deve interromper a tela atual. */ }
+}
 function dataSnapshot() { const dashboard = state.dashboard ? { ...state.dashboard } : null; if (dashboard) delete dashboard.generatedAt; return JSON.stringify({ dashboard, records: state.records, users: state.users, messages: state.messages, report: state.report, statuses: state.statuses, locations: state.locations, unreadMessages: state.unreadMessages }); }
 async function load(options = {}) {
   const silent = Boolean(options.silent);
@@ -308,15 +433,12 @@ async function sendDemandComment(event, id) {
   const form = event.target;
   const text = new FormData(form).get('text')?.trim();
   if (!text) return;
-  const button = form.querySelector('button');
-  button.disabled = true;
   try {
     await api(`/api/resources/demandas/${id}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
     await openDemandDetails(id);
     await refreshUnreadMessages(true);
     toast('Resposta enviada e participantes notificados.');
   } catch (error) {
-    button.disabled = false;
     toast(error.message);
   }
 }
@@ -324,13 +446,12 @@ async function assignDemandToMe(id) {
   const status = String(state.modal?.record?.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (/conclu|finaliz|resolvid|encerr/i.test(status)) return toast('Este chamado já está concluído.');
   const button = document.querySelector('.ticket-assume');
-  if (button) button.disabled = true;
+  beginPendingAction(button, { label: 'Atribuindo…', form: true });
   try {
     await api(`/api/resources/demandas/${id}/assign-self`, { method: 'PUT', body: '{}' });
     await openDemandDetails(id);
     toast('Chamado atribuído a você.');
   } catch (error) {
-    if (button) button.disabled = false;
     toast(error.message);
   }
 }
@@ -393,8 +514,26 @@ async function compose() { if (!state.users.length) state.users = (await api('/a
 function openAnnouncement() { state.modal = { type: 'announcement' }; state.formDirty = false; render(); }
 async function saveAnnouncement(event) { event.preventDefault(); try { await api('/api/announcements', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Comunicado publicado para todos.'); } catch (error) { toast(error.message); } }
 async function deleteAnnouncement(id) { if (!await confirmDialog({ title: 'Remover comunicado', message: 'Este comunicado deixará de ser exibido para todos os usuários.', confirmLabel: 'Remover', destructive: true })) return; try { await api(`/api/announcements/${id}`, { method: 'DELETE' }); await load(); toast('Comunicado removido.'); } catch (error) { toast(error.message); } }
-async function replyMail(id) { const message = state.messages.find(item => item.id === id); if (!message) return; if (!state.users.length) state.users = (await api('/api/users')).users; state.modal = { type: 'mail', reply: { recipientId: message.senderId, subject: message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}` } }; state.formDirty = false; render(); }
-async function closeModal(force = false) { if (!force && state.formDirty && !await confirmDialog({ title: 'Descartar alterações?', message: 'Há dados não salvos. Deseja fechar mesmo assim?', confirmLabel: 'Descartar', destructive: true })) return; state.modal = null; state.formDirty = false; state.newDemandType = null; render(); }
+async function replyMail(id) { const message = state.messages.find(item => item.id === id); if (message) await readThread(messageThreadId(message)); }
+function prefersReducedMotion() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+function waitForSurfaceExit(surface) {
+  if (!surface || prefersReducedMotion()) return Promise.resolve();
+  surface.classList.add('is-closing');
+  return new Promise(resolve => {
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      surface.removeEventListener('transitionend', onTransitionEnd);
+      resolve();
+    };
+    const onTransitionEnd = event => { if (event.target === surface && event.propertyName === 'opacity') finish(); };
+    const timeout = setTimeout(finish, 220);
+    surface.addEventListener('transitionend', onTransitionEnd);
+  });
+}
+async function closeModal(force = false) { if (!force && state.formDirty && !await confirmDialog({ title: 'Descartar alterações?', message: 'Há dados não salvos. Deseja fechar mesmo assim?', confirmLabel: 'Descartar', destructive: true })) return; closingModal = true; await waitForSurfaceExit(document.querySelector('.modal-backdrop')); state.modal = null; state.formDirty = false; state.newDemandType = null; closingModal = false; render(); }
 function closeBack(event) { /* O fundo do modal não fecha formulários: evita perda de dados digitados. */ }
 async function saveRecord(event, resource, id) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); const observation = event.target.querySelector('[name="novaObservacao"]'); if (observation) data.novaObservacao = observation.value.trim(); if (resource === 'computadores') data.checklist = form.getAll('checklist'); try { await api(`/api/resources/${resource}${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(data) }); closeModal(true); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast('Cadastro salvo.'); } catch (error) { toast(error.message); } }
 async function deleteRecord(resource, id) { if (!await confirmDialog({ title: 'Excluir registro', message: 'Este registro será removido permanentemente e não poderá ser recuperado.', confirmLabel: 'Excluir', destructive: true })) return; try { await api(`/api/resources/${resource}/${id}`, { method: 'DELETE' }); await load(); toast('Registro excluído.'); } catch (error) { toast(error.message); } }
@@ -454,25 +593,61 @@ async function dropDemand(event, status) { event.preventDefault(); const demandI
 async function moveDemand(id, status) { const demand = state.records.find(record => record.id === id); if (!demand || demand.status === status) return; if (!demand.tecnicoResponsavel) { await openDemandDetails(id); return toast('Veja as informações e assuma o chamado antes de alterar o status.'); } try { await api(`/api/resources/demandas/${id}`, { method: 'PUT', body: JSON.stringify({ ...demand, status }) }); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast(`Demanda movida para ${status}.`); } catch (error) { toast(error.message); } }
 async function saveStatuses(event) { event.preventDefault(); const statuses = new FormData(event.target).getAll('status').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/demand-statuses', { method: 'PUT', body: JSON.stringify({ statuses }) }); state.statuses = result.statuses; closeModal(true); await load(); toast('Status atualizados.'); } catch (error) { toast(error.message); } }
 async function saveComputerGroups(event) { event.preventDefault(); const groups = new FormData(event.target).getAll('group').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/computer-groups', { method: 'PUT', body: JSON.stringify({ groups }) }); state.computerGroups = result.groups; closeModal(true); toast('Grupos atualizados.'); } catch (error) { toast(error.message); } }
-async function sendMail(event) { event.preventDefault(); try { await api('/api/messages', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Mensagem enviada.'); } catch (error) { toast(error.message); } }
+async function sendMail(event, replyToId = '', currentThreadId = '') {
+  event.preventDefault();
+  const form = event.target, data = Object.fromEntries(new FormData(form));
+  if (replyToId) data.replyToId = replyToId;
+  try {
+    const result = await api('/api/messages', { method: 'POST', body: JSON.stringify(data) });
+    if (currentThreadId) {
+      const parent = state.messages.find(message => message.id === replyToId);
+      const recipient = parent?.senderId === state.user.id ? parent.recipient : parent?.sender || state.users.find(user => user.id === result.message.recipientId);
+      const message = { ...result.message, sender: state.user, recipient };
+      state.messages.unshift(message);
+      state.formDirty = false;
+      form.reset();
+      const history = document.querySelector('.mail-thread-history');
+      history?.insertAdjacentHTML('beforeend', mailThreadMessage(message, state.user.id));
+      if (history) history.scrollTop = history.scrollHeight;
+      const summary = document.querySelector('[data-mail-thread-summary]');
+      if (summary && recipient) summary.textContent = mailThreadSummary(recipient, state.messages.filter(item => messageThreadId(item) === currentThreadId && visibleMessageForMe(item, state.user.id)).length);
+    } else { await closeModal(true); await load(); }
+    toast('Mensagem enviada.');
+  } catch (error) { toast(error.message); }
+}
 function setMailFolder(folder) { state.mailFolder = folder; state.selectedMessageId = null; state.mailQuery = ''; render(); }
 function setMailSearch(value) { state.mailQuery = value; state.selectedMessageId = null; render(); const input = document.querySelector('.mail-list-tools input'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
-async function readMessage(id) { const message = state.messages.find(item => item.id === id); if (message?.recipient.id === state.user.id && !message.readAt) { try { await api(`/api/messages/${id}/read`, { method: 'PUT' }); message.readAt = new Date().toISOString(); state.unreadMessages = unreadCount(state.messages); } catch (error) { toast(error.message); } } state.modal = { type: 'mail-read', messageId: id }; render(); }
+async function readThread(threadId) { const unreadMessages = state.messages.filter(message => messageThreadId(message) === threadId && message.recipient.id === state.user.id && !message.readAt && !message.recipientDeletedAt); try { await Promise.all(unreadMessages.map(async message => { await api(`/api/messages/${message.id}/read`, { method: 'PUT' }); message.readAt = new Date().toISOString(); })); state.unreadMessages = unreadCount(state.messages); knownUnreadMessageIds = new Set(state.messages.filter(message => message.recipient.id === state.user.id && !message.readAt && !message.recipientDeletedAt).map(message => message.id)); } catch (error) { toast(error.message); } state.modal = { type: 'mail-thread', threadId }; render(); }
 async function deleteMail(id) { if (!await confirmDialog({ title: 'Mover para Apagadas', message: 'A mensagem será removida da sua caixa atual.', confirmLabel: 'Mover mensagem', destructive: true })) return; try { await api(`/api/messages/${id}`, { method: 'DELETE' }); closeModal(true); await load(); toast('Mensagem movida para Apagadas.'); } catch (error) { toast(error.message); } }
 function collectPermissions(form) { const permissions = {}; for (const resource of Object.keys(modules)) { const list = form.get(`permission-${resource}-list`) === 'on', create = form.get(`permission-${resource}-create`) === 'on', update = form.get(`permission-${resource}-update`) === 'on', consult = form.get(`permission-${resource}-consult`) === 'on', remove = form.get(`permission-${resource}-delete`) === 'on'; if (list || create || update || consult || remove) permissions[resource] = { list, create, update, consult, delete: remove }; } return permissions; }
 async function saveUser(event) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); data.permissions = collectPermissions(form); try { await api('/api/users', { method: 'POST', body: JSON.stringify(data) }); closeModal(true); await load(); toast('Usuário criado.'); } catch (error) { toast(error.message); } }
 async function savePreRegistration(event) { event.preventDefault(); try { await api('/api/users/pre-cadastro', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Pré-cadastro criado.'); } catch (error) { toast(error.message); } }
 async function savePermissions(event, id) { event.preventDefault(); try { await api(`/api/users/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions: collectPermissions(new FormData(event.target)) }) }); closeModal(true); await load(); toast('Permissões atualizadas.'); } catch (error) { toast(error.message); } }
-async function resetUserPassword(event, id) { event.preventDefault(); const form = new FormData(event.target); const password = form.get('password'); if (password !== form.get('passwordConfirmation')) return toast('As senhas temporárias não coincidem.'); try { await api(`/api/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }); closeModal(true); await load(); toast('Senha redefinida. O usuário deverá trocá-la no próximo acesso.'); } catch (error) { toast(error.message); } }
+async function resetUserPassword(event, id) { event.preventDefault(); const form = new FormData(event.target); const password = form.get('password'); if (password !== form.get('passwordConfirmation')) { releasePendingAction(); return toast('As senhas temporárias não coincidem.'); } try { await api(`/api/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }); closeModal(true); await load(); toast('Senha redefinida. O usuário deverá trocá-la no próximo acesso.'); } catch (error) { toast(error.message); } }
 async function setUserActive(id, active) { const action = active ? 'ativar' : 'desativar'; if (!await confirmDialog({ title: `${active ? 'Ativar' : 'Desativar'} usuário`, message: `Deseja ${action} este usuário?`, confirmLabel: active ? 'Ativar usuário' : 'Desativar usuário', destructive: !active })) return; try { await api(`/api/users/${id}/active`, { method: 'PUT', body: JSON.stringify({ active }) }); await load(); toast(`Usuário ${active ? 'ativado' : 'desativado'}.`); } catch (error) { toast(error.message); } }
 async function approveUser(id) { if (!await confirmDialog({ title: 'Ativar cadastro', message: 'O colaborador passará a ter acesso à Central T.I.', confirmLabel: 'Ativar cadastro' })) return; try { await api(`/api/users/${id}/approve`, { method: 'PUT', body: '{}' }); await load(); toast('Cadastro ativado.'); } catch (error) { toast(error.message); } }
 async function changeOwnPassword(event) { event.preventDefault(); try { await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); state.user.mustChangePassword = false; toast('Senha atualizada com sucesso.'); load(); } catch (error) { toast(error.message); } }
 async function createBackup() { try { const result = await api('/api/backups', { method: 'POST' }); toast(result.message || 'Backup criado.'); } catch (error) { toast(error.message); } }
 async function openHistory(resource, id) { try { const result = await api(`/api/resources/${resource}/${id}/history`); const lines = result.logs.map(log => `${formatDate(log.createdAt)} — ${log.userName || 'Usuário'}: ${log.action}`).join('\n'); alert(lines || 'Ainda não há movimentações registradas.'); } catch (error) { toast(error.message); } }
-async function download(url, name) { const response = await fetch(url, { headers: { authorization: `Bearer ${state.token}` } }); if (!response.ok) return toast('Falha na exportação.'); const link = document.createElement('a'); link.href = URL.createObjectURL(await response.blob()); link.download = name; link.click(); URL.revokeObjectURL(link.href); }
+async function download(url, name) {
+  beginPendingAction(document.activeElement, { label: 'Exportando…' });
+  try {
+    const response = await fetch(url, { headers: { authorization: `Bearer ${state.token}` } });
+    if (!response.ok) return toast('Falha na exportação.');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message || 'Falha na exportação.');
+  } finally {
+    releasePendingAction();
+  }
+}
 function exportResource(resource) { download(`/api/resources/${resource}/export`, `central-ti-${resource}.csv`); }
 function exportReport() { const query = new URLSearchParams(); if (state.start) query.set('start', state.start); if (state.end) query.set('end', state.end); for (const [key, value] of Object.entries(state.exclusionFilters)) if (value) query.set(`exclusion${key[0].toUpperCase()}${key.slice(1)}`, value); download(`/api/reports/export?${query}`, 'relatorio-central-ti.csv'); }
-async function finishLogin(result) { state.token = result.token; state.user = result.user; state.pending = null; localStorage.setItem(TOKEN, state.token); const me = await api('/api/me'); state.networkUrls = me.networkUrls || []; load(); }
+async function finishLogin(result) { state.token = result.token; state.user = result.user; state.pending = null; knownUnreadMessageIds = null; localStorage.setItem(TOKEN, state.token); const me = await api('/api/me'); state.networkUrls = me.networkUrls || []; load(); }
 async function authenticate(event) { event.preventDefault(); try { const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result.requiresVerification) { state.pending = result; render(); return; } await finishLogin(result); } catch (error) { toast(error.message); } }
 function flipAuthCard(updateView, backwards = false) {
   const card = document.querySelector('.login-card');
@@ -494,7 +669,8 @@ function flipAuthCard(updateView, backwards = false) {
 function continueLogin(event) {
   event.preventDefault();
   const identifier = String(new FormData(event.target).get('email') || '').trim();
-  if (!identifier) return;
+  if (!identifier) { releasePendingAction(); return; }
+  releasePendingAction();
   flipAuthCard(() => {
     state.loginIdentifier = identifier;
     state.loginStep = 'password';
@@ -520,15 +696,16 @@ async function identifyFirstAccess(event) { event.preventDefault(); try { state.
 async function completeFirstAccess(event) { event.preventDefault(); try { await api('/api/first-access/complete', { method: 'POST', body: JSON.stringify({ ...Object.fromEntries(new FormData(event.target)), token: state.firstAccess.token }) }); state.firstAccess = null; render(); toast('Cadastro enviado. Aguarde a ativação do administrador.'); } catch (error) { toast(error.message); } }
 async function verifyCode(event) { event.preventDefault(); try { const result = await api('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ verificationToken: state.pending.verificationToken, code: new FormData(event.target).get('code') }) }); await finishLogin(result); } catch (error) { toast(error.message); } }
 function cancelCode() { state.pending = null; render(); }
-async function logout() { try { await api('/api/auth/logout', { method: 'POST' }); } catch {} state.token = null; state.user = null; state.pending = null; state.loginStep = 'identifier'; state.loginIdentifier = ''; localStorage.removeItem(TOKEN); render(); }
-function toast(message) { $('.toast')?.remove(); const toastElement = document.createElement('div'); toastElement.className = 'toast'; toastElement.textContent = message; document.body.append(toastElement); setTimeout(() => toastElement.remove(), 3500); }
+async function logout() { try { await api('/api/auth/logout', { method: 'POST' }); } catch {} state.token = null; state.user = null; state.pending = null; knownUnreadMessageIds = null; state.loginStep = 'identifier'; state.loginIdentifier = ''; localStorage.removeItem(TOKEN); render(); }
+function dismissToast(toastElement) { if (!toastElement?.isConnected) return; if (prefersReducedMotion()) { toastElement.remove(); return; } toastElement.classList.add('is-closing'); setTimeout(() => toastElement.remove(), 160); }
+function toast(message) { $('.toast')?.remove(); const toastElement = document.createElement('div'); toastElement.className = 'toast'; toastElement.setAttribute('role', 'status'); toastElement.setAttribute('aria-live', 'polite'); toastElement.textContent = message; document.body.append(toastElement); setTimeout(() => dismissToast(toastElement), 3500); }
 function confirmDialog({ title = 'Confirmar ação', message = '', confirmLabel = 'Confirmar', destructive = false } = {}) {
   return new Promise(resolve => {
     document.querySelector('.system-confirmation')?.remove();
     const dialog = document.createElement('div');
     dialog.className = 'system-confirmation';
     dialog.innerHTML = `<section class="system-confirmation-card" role="alertdialog" aria-modal="true" aria-labelledby="system-confirmation-title"><div class="system-confirmation-icon" aria-hidden="true">${destructive ? '!' : '✓'}</div><div><h2 id="system-confirmation-title">${esc(title)}</h2><p>${esc(message)}</p></div><div class="system-confirmation-actions"><button type="button" class="secondary">Cancelar</button><button type="button" class="${destructive ? 'danger-confirm' : 'add-record'}">${esc(confirmLabel)}</button></div></section>`;
-    const finish = answer => { dialog.remove(); resolve(answer); };
+    const finish = async answer => { await waitForSurfaceExit(dialog); dialog.remove(); resolve(answer); };
     const [cancelButton, confirmButton] = dialog.querySelectorAll('button');
     cancelButton.addEventListener('click', () => finish(false));
     confirmButton.addEventListener('click', () => finish(true));
