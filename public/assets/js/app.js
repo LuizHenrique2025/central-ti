@@ -342,6 +342,7 @@ async function load(options = {}) {
   const requestedPage = state.page;
   const before = silent ? dataSnapshot() : '';
   const isCurrentRequest = () => requestId === navigationRequest && requestedPage === state.page;
+  const usersForPage = () => state.user.perfil === 'admin' ? api('/api/users') : Promise.resolve({ users: [] });
 
   if (!silent) {
     state.loading = true;
@@ -355,7 +356,7 @@ async function load(options = {}) {
       state.dashboard = dashboard;
       state.unreadMessages = dashboard.inbox || 0;
     } else if (requestedPage === 'demandas' || requestedPage.startsWith('demandas-')) {
-      const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), api('/api/users')]);
+      const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), usersForPage()]);
       if (!isCurrentRequest()) return;
       state.records = records.records;
       state.statuses = statuses.statuses;
@@ -369,7 +370,7 @@ async function load(options = {}) {
       if (!isCurrentRequest()) return;
       state.report = report;
     } else if (requestedPage === 'email') {
-      const [mail, users] = await Promise.all([api('/api/messages'), api('/api/users')]);
+      const [mail, users] = await Promise.all([api('/api/messages'), usersForPage()]);
       if (!isCurrentRequest()) return;
       state.messages = mail.messages;
       state.users = users.users;
@@ -383,7 +384,7 @@ async function load(options = {}) {
       if (!isCurrentRequest()) return;
       state.locations = locations;
     } else {
-      const [records, users] = await Promise.all([api(`/api/resources/${requestedPage}`), api('/api/users')]);
+      const [records, users] = await Promise.all([api(`/api/resources/${requestedPage}`), usersForPage()]);
       if (!isCurrentRequest()) return;
       state.records = records.records;
       state.users = users.users;
