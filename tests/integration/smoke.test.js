@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { after, before, test } = require('node:test');
+const { createEncryptedStore } = require('../../server/core/encrypted-store');
 
 let child;
 let baseUrl;
@@ -45,6 +46,7 @@ before(async () => {
       PORT: String(port),
       CENTRAL_TI_DATA_DIR: path.join(temporaryRoot, 'storage'),
       BACKUP_DIR: path.join(temporaryRoot, 'backups'),
+      CENTRAL_TI_DATA_ENCRYPTION_KEY: 'q1qY1Z7Yo0DZ5Nxcjr9m9P4hZ4KaGPIqdveMyoeujh0=',
       DATABASE_URL: '',
       EMAIL_2FA_REQUIRED: 'false'
     },
@@ -65,6 +67,8 @@ test('entrega a interface e informa saúde do serviço', async () => {
   const page = await fetch(`${baseUrl}/`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Central TI/);
+  assert.equal(page.headers.get('x-frame-options'), 'DENY');
+  assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
 
   const [script, stylesheet] = await Promise.all([
     fetch(`${baseUrl}/assets/js/app.js`),
@@ -82,6 +86,10 @@ test('entrega a interface e informa saúde do serviço', async () => {
   const health = await fetch(`${baseUrl}/api/health`);
   assert.equal(health.status, 200);
   assert.deepEqual((await health.json()).ok, true);
+  assert.equal((await fetch(`${baseUrl}/api/me`)).status, 401);
+
+  const invalidContentType = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'email=admin' });
+  assert.equal(invalidContentType.status, 415);
 });
 
 test('rejeita senha inválida e aceita a conta demonstrativa inicial', async () => {
@@ -112,6 +120,12 @@ test('rejeita senha inválida e aceita a conta demonstrativa inicial', async () 
   assert.match(microSipStatus.message, /MicroSIP/);
 });
 
+test('não abre uma base criptografada sem a chave correspondente', () => {
+  const key = 'q1qY1Z7Yo0DZ5Nxcjr9m9P4hZ4KaGPIqdveMyoeujh0=';
+  const encrypted = createEncryptedStore(key).serialize({ users: [] });
+  assert.throws(() => createEncryptedStore().deserialize(encrypted), /CENTRAL_TI_DATA_ENCRYPTION_KEY/);
+});
+
 test('usuários comuns visualizam somente as próprias demandas', async () => {
   const login = async (email, password) => {
     const response = await fetch(`${baseUrl}/api/auth/login`, {
@@ -130,7 +144,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const adminToken = await login('admin@centralti.local', '123456');
   const changedAdmin = await request('/api/auth/change-password', adminToken, {
     method: 'POST',
-    body: JSON.stringify({ currentPassword: '123456', newPassword: 'Admin2026@' })
+    body: JSON.stringify({ currentPassword: '123456', newPassword: 'Admin2026@Segura' })
   });
   assert.equal(changedAdmin.status, 200);
 
@@ -235,6 +249,9 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(forbiddenComment.status, 404);
 
+  const forbiddenUsers = await request('/api/users', tokenA);
+  assert.equal(forbiddenUsers.status, 403);
+
   const adminMessages = await request('/api/messages', adminToken);
   assert.equal((await adminMessages.json()).messages.some(message => message.subject.includes(demand.ticket)), true);
 
@@ -273,4 +290,8 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(recordsA.find(record => record.id === demand.id).interacoes.length, 2);
   assert.equal(recordsB.some(record => record.titulo === 'Demanda confidencial do usuário A'), false);
   assert.equal(recordsAdmin.some(record => record.titulo === 'Demanda confidencial do usuário A'), true);
+
+  const persisted = fs.readFileSync(path.join(temporaryRoot, 'storage', 'central-ti.json'), 'utf8');
+  assert.match(persisted, /"encrypted"/);
+  assert.equal(persisted.includes('admin@centralti.local'), false);
 });

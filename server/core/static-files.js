@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { SECURITY_HEADERS } = require('./http');
 
 const PUBLIC_FILES = new Set([
   '/index.html',
@@ -26,8 +27,9 @@ function createStaticFileHandler(publicDirectory) {
     res.writeHead(200, {
       'content-type': types[path.extname(filePath)] || 'application/octet-stream',
       'cache-control': 'no-cache',
-      'x-content-type-options': 'nosniff',
-      'x-frame-options': 'DENY'
+      ...SECURITY_HEADERS,
+      // Os eventos inline do front-end ainda exigem 'unsafe-inline'. Remova-o ao migrá-los para listeners externos.
+      'content-security-policy': "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'"
     });
     fs.createReadStream(filePath).pipe(res);
   };
