@@ -2430,6 +2430,8 @@ body:not(.light-theme) .demand-detail-heading span {
 .light-theme .link-button { color:#1d5fae; }
 .light-theme .link-button:hover { color:#164b88; text-decoration:underline; }
 .light-theme .link-button:focus-visible { outline:2px solid #2563eb; outline-offset:2px; border-radius:4px; }
+.light-theme .users-table .link-button { color:#1d5fae !important; }
+.light-theme .users-table .link-button:hover { color:#164b88 !important; text-decoration:underline; }
 
 /* Conversas de e-mail: histórico legível, com resposta no mesmo contexto. */
 .mail-thread-count { display:inline-grid; place-items:center; min-width:19px; padding:1px 5px; margin-left:4px; border-radius:999px; background:#3a4149; color:#e6eaee; font-size:10px; }
