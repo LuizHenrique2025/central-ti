@@ -144,7 +144,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const adminToken = await login('admin@centralti.local', '123456');
   const changedAdmin = await request('/api/auth/change-password', adminToken, {
     method: 'POST',
-    body: JSON.stringify({ currentPassword: '123456', newPassword: 'Admin2026@Segura' })
+    body: JSON.stringify({ currentPassword: '123456', newPassword: 'Abcdef1!' })
   });
   assert.equal(changedAdmin.status, 200);
 
