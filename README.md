@@ -30,6 +30,10 @@ storage/              Dados locais (não enviados ao GitHub)
 backups/              Cópias locais (não enviadas ao GitHub)
 ```
 
+## Fluxo de desenvolvimento
+
+Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entregue por Pull Request. Consulte [AGENTS.md](AGENTS.md) para o fluxo obrigatório: Issue antes da implementação, branch por Issue, testes, PR com `Closes #<número>` e deploy somente após aprovação.
+
 ### Compartilhar na mesma rede
 
 Com o sistema iniciado nesta máquina, o painel mostra o endereço de rede local, por exemplo `http://192.168.x.x:3000`. Envie esse endereço ao seu amigo: ambos trabalharão com os mesmos cadastros e mensagens em tempo real ao atualizar a página.
@@ -44,7 +48,13 @@ Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **
 | TI | ti@centralti.local | 123456 |
 | Recepção | recepcao@centralti.local | 123456 |
 
-No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. As senhas são guardadas somente como hash com `scrypt` e salt individual. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+
+Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
+
+### Redefinir senha de um usuário
+
+Entre com um perfil de **Administrador**, abra **Usuários**, localize o cadastro pelo e-mail e clique em **Redefinir senha**. Informe e confirme uma senha temporária. As sessões ativas daquele usuário serão encerradas e ele terá de trocar a senha no próximo acesso.
 
 ### Redefinir senha de um usuário
 
