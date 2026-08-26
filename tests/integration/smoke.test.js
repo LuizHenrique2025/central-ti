@@ -141,6 +141,35 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(report.status, 200);
   assert.equal((await report.json()).modules.some(module => module.resource === 'materiais'), false);
 
+  const configuredStatuses = await request('/api/demand-statuses', adminToken);
+  const statusList = (await configuredStatuses.json()).statuses;
+  const savedStatuses = await request('/api/demand-statuses', adminToken, {
+    method: 'PUT',
+    body: JSON.stringify({ statuses: [...new Set([...statusList, 'Concluida', 'Tdsa Concluídas'])] })
+  });
+  assert.equal(savedStatuses.status, 200);
+  for (const status of ['Concluida', 'Tdsa Concluídas']) {
+    const demand = await request('/api/resources/demandas', adminToken, {
+      method: 'POST',
+      body: JSON.stringify({ titulo: `Demanda ${status}`, solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'Teste de métrica', prioridade: 'Média', status })
+    });
+    assert.equal(demand.status, 201);
+  }
+  const customStatusReport = await request('/api/reports', adminToken);
+  const customStatusTotals = (await customStatusReport.json()).demandStatus;
+  assert.equal(customStatusTotals.find(item => item.status === 'Concluida').total, 1);
+  assert.equal(customStatusTotals.find(item => item.status === 'Tdsa Concluídas').total, 1);
+  const dashboard = await request('/api/dashboard', adminToken);
+  const dashboardData = await dashboard.json();
+  const expectedAssets = await Promise.all(['computadores', 'equipamentos', 'patrimonio'].map(async resource => {
+    const response = await request(`/api/resources/${resource}`, adminToken);
+    return (await response.json()).records.length;
+  }));
+  assert.equal(dashboardData.activeCount, expectedAssets.reduce((total, count) => total + count, 0));
+  const allDemands = await request('/api/resources/demandas', adminToken);
+  const expectedOpenDemands = (await allDemands.json()).records.filter(record => !/conclu|finaliz|resolvid|encerr/i.test(String(record.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))).length;
+  assert.equal(dashboardData.openDemands, expectedOpenDemands);
+
   const incompleteDeletion = await request('/api/resources/demandas', adminToken, {
     method: 'POST',
     body: JSON.stringify({ titulo: 'Excluir atendimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Exclusão de atendimento', prioridade: 'Alta', status: 'Aberta' })
