@@ -3,6 +3,7 @@ const TOKEN = 'central-ti-token';
 const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, reportTab: 'overview', exclusionFilters: {}, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', start: '', end: '', networkUrls: [], modal: null, pending: null, firstAccess: null, loginStep: 'identifier', loginIdentifier: '', loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, ramalOrder: 'asc', mailFolder: 'inbox', selectedMessageId: null, mailQuery: '' };
 let navigationRequest = 0;
 let closingModal = false;
+let pendingAction = null;
 let sidebarCollapsed = localStorage.getItem('central-ti-sidebar-collapsed') === 'true';
 let colorTheme = localStorage.getItem('central-ti-theme') === 'light' ? 'light' : 'dark';
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
@@ -10,6 +11,44 @@ const formatDate = value => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short
 const formatSla = value => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '';
 const formatCurrency = cents => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100);
 function formatCurrencyInput(input) { const digits = input.value.replace(/\D/g, ''); input.value = digits ? formatCurrency(Number(digits)) : ''; }
+function pendingLabel(control) {
+  const label = String(control?.textContent || '').trim().toLowerCase();
+  if (/export|csv|excel/.test(label)) return 'Exportando…';
+  if (/enviar|responder|publicar/.test(label)) return 'Enviando…';
+  if (/redefinir/.test(label)) return 'Redefinindo…';
+  if (/criar|abrir|incluir/.test(label)) return 'Criando…';
+  if (/remover|excluir|apagar/.test(label)) return 'Removendo…';
+  if (/atribuir|assumir/.test(label)) return 'Atribuindo…';
+  return 'Salvando…';
+}
+function beginPendingAction(control, options = {}) {
+  if (!(control instanceof HTMLButtonElement) || control.disabled || pendingAction) return null;
+  const originalHtml = control.innerHTML;
+  const originalBusy = control.getAttribute('aria-busy');
+  const label = options.label || pendingLabel(control);
+  control.disabled = true;
+  control.classList.add('action-pending');
+  control.setAttribute('aria-busy', 'true');
+  control.innerHTML = '<span class="button-spinner" aria-hidden="true"></span><span aria-live="polite">' + esc(label) + '</span>';
+  pendingAction = { control, originalHtml, originalBusy, form: Boolean(options.form) };
+  return pendingAction;
+}
+function releasePendingAction() {
+  if (!pendingAction) return;
+  const { control, originalHtml, originalBusy } = pendingAction;
+  pendingAction = null;
+  if (!control.isConnected) return;
+  control.disabled = false;
+  control.classList.remove('action-pending');
+  control.innerHTML = originalHtml;
+  if (originalBusy === null) control.removeAttribute('aria-busy');
+  else control.setAttribute('aria-busy', originalBusy);
+}
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+  beginPendingAction(event.submitter || form.querySelector('button[type="submit"], button:not([type])'), { form: true });
+}, true);
 const role = value => ({ admin: 'Administrador', ti: 'Equipe de TI', recepcao: 'Recepção', consulta: 'Consulta' })[value] || value;
 const permission = (resource, action) => { if (state.user?.perfil === 'admin') return true; const permissions = state.user?.permissions; const value = permissions?.[resource]; if (value) { const legacyRead = value.read !== false; return Boolean(value[action] ?? (action === 'list' || action === 'consult' ? legacyRead : action === 'create' || action === 'update' ? value.write : false)); } if (permissions && Object.keys(permissions).length) return false; return state.user?.perfil === 'ti' || (state.user?.perfil === 'consulta' && (action === 'list' || action === 'consult')); };
 const canWrite = resource => permission(resource, 'create') || permission(resource, 'update');
@@ -18,10 +57,18 @@ const canDelete = resource => permission(resource, 'delete');
 const canCreate = resource => permission(resource, 'create');
 const canUpdate = resource => permission(resource, 'update');
 async function api(url, options = {}) {
-  const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(state.token ? { authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
-  return data;
+  const tracksPendingAction = options.method && options.method !== 'GET';
+  if (tracksPendingAction && !pendingAction) beginPendingAction(document.activeElement);
+  try {
+    const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(state.token ? { authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
+    if (tracksPendingAction && pendingAction && !pendingAction.form) releasePendingAction();
+    return data;
+  } catch (error) {
+    if (tracksPendingAction) releasePendingAction();
+    throw error;
+  }
 }
 function tag(value) { const text = String(value || ''), normalized = text.toLowerCase(); const kind = /(bom|ativo|online|operacional|concluída|disponível|em uso)/.test(normalized) ? 'success' : /(ruim|manutenção|média|andamento|renovação)/.test(normalized) ? 'warning' : /(troca|crítica|alta|offline|indisponível|baixado|cancelado)/.test(normalized) ? 'danger' : ''; return `<span class="tag ${kind}">${esc(text)}</span>`; }
 function demandCardControl(card) {
@@ -328,15 +375,12 @@ async function sendDemandComment(event, id) {
   const form = event.target;
   const text = new FormData(form).get('text')?.trim();
   if (!text) return;
-  const button = form.querySelector('button');
-  button.disabled = true;
   try {
     await api(`/api/resources/demandas/${id}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
     await openDemandDetails(id);
     await refreshUnreadMessages(true);
     toast('Resposta enviada e participantes notificados.');
   } catch (error) {
-    button.disabled = false;
     toast(error.message);
   }
 }
@@ -344,13 +388,12 @@ async function assignDemandToMe(id) {
   const status = String(state.modal?.record?.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (/conclu|finaliz|resolvid|encerr/i.test(status)) return toast('Este chamado já está concluído.');
   const button = document.querySelector('.ticket-assume');
-  if (button) button.disabled = true;
+  beginPendingAction(button, { label: 'Atribuindo…', form: true });
   try {
     await api(`/api/resources/demandas/${id}/assign-self`, { method: 'PUT', body: '{}' });
     await openDemandDetails(id);
     toast('Chamado atribuído a você.');
   } catch (error) {
-    if (button) button.disabled = false;
     toast(error.message);
   }
 }
@@ -501,13 +544,28 @@ function collectPermissions(form) { const permissions = {}; for (const resource 
 async function saveUser(event) { event.preventDefault(); const form = new FormData(event.target), data = Object.fromEntries(form); data.permissions = collectPermissions(form); try { await api('/api/users', { method: 'POST', body: JSON.stringify(data) }); closeModal(true); await load(); toast('Usuário criado.'); } catch (error) { toast(error.message); } }
 async function savePreRegistration(event) { event.preventDefault(); try { await api('/api/users/pre-cadastro', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); closeModal(true); await load(); toast('Pré-cadastro criado.'); } catch (error) { toast(error.message); } }
 async function savePermissions(event, id) { event.preventDefault(); try { await api(`/api/users/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions: collectPermissions(new FormData(event.target)) }) }); closeModal(true); await load(); toast('Permissões atualizadas.'); } catch (error) { toast(error.message); } }
-async function resetUserPassword(event, id) { event.preventDefault(); const form = new FormData(event.target); const password = form.get('password'); if (password !== form.get('passwordConfirmation')) return toast('As senhas temporárias não coincidem.'); try { await api(`/api/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }); closeModal(true); await load(); toast('Senha redefinida. O usuário deverá trocá-la no próximo acesso.'); } catch (error) { toast(error.message); } }
+async function resetUserPassword(event, id) { event.preventDefault(); const form = new FormData(event.target); const password = form.get('password'); if (password !== form.get('passwordConfirmation')) { releasePendingAction(); return toast('As senhas temporárias não coincidem.'); } try { await api(`/api/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }); closeModal(true); await load(); toast('Senha redefinida. O usuário deverá trocá-la no próximo acesso.'); } catch (error) { toast(error.message); } }
 async function setUserActive(id, active) { const action = active ? 'ativar' : 'desativar'; if (!await confirmDialog({ title: `${active ? 'Ativar' : 'Desativar'} usuário`, message: `Deseja ${action} este usuário?`, confirmLabel: active ? 'Ativar usuário' : 'Desativar usuário', destructive: !active })) return; try { await api(`/api/users/${id}/active`, { method: 'PUT', body: JSON.stringify({ active }) }); await load(); toast(`Usuário ${active ? 'ativado' : 'desativado'}.`); } catch (error) { toast(error.message); } }
 async function approveUser(id) { if (!await confirmDialog({ title: 'Ativar cadastro', message: 'O colaborador passará a ter acesso à Central T.I.', confirmLabel: 'Ativar cadastro' })) return; try { await api(`/api/users/${id}/approve`, { method: 'PUT', body: '{}' }); await load(); toast('Cadastro ativado.'); } catch (error) { toast(error.message); } }
 async function changeOwnPassword(event) { event.preventDefault(); try { await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); state.user.mustChangePassword = false; toast('Senha atualizada com sucesso.'); load(); } catch (error) { toast(error.message); } }
 async function createBackup() { try { const result = await api('/api/backups', { method: 'POST' }); toast(result.message || 'Backup criado.'); } catch (error) { toast(error.message); } }
 async function openHistory(resource, id) { try { const result = await api(`/api/resources/${resource}/${id}/history`); const lines = result.logs.map(log => `${formatDate(log.createdAt)} — ${log.userName || 'Usuário'}: ${log.action}`).join('\n'); alert(lines || 'Ainda não há movimentações registradas.'); } catch (error) { toast(error.message); } }
-async function download(url, name) { const response = await fetch(url, { headers: { authorization: `Bearer ${state.token}` } }); if (!response.ok) return toast('Falha na exportação.'); const link = document.createElement('a'); link.href = URL.createObjectURL(await response.blob()); link.download = name; link.click(); URL.revokeObjectURL(link.href); }
+async function download(url, name) {
+  beginPendingAction(document.activeElement, { label: 'Exportando…' });
+  try {
+    const response = await fetch(url, { headers: { authorization: `Bearer ${state.token}` } });
+    if (!response.ok) return toast('Falha na exportação.');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message || 'Falha na exportação.');
+  } finally {
+    releasePendingAction();
+  }
+}
 function exportResource(resource) { download(`/api/resources/${resource}/export`, `central-ti-${resource}.csv`); }
 function exportReport() { const query = new URLSearchParams(); if (state.start) query.set('start', state.start); if (state.end) query.set('end', state.end); for (const [key, value] of Object.entries(state.exclusionFilters)) if (value) query.set(`exclusion${key[0].toUpperCase()}${key.slice(1)}`, value); download(`/api/reports/export?${query}`, 'relatorio-central-ti.csv'); }
 async function finishLogin(result) { state.token = result.token; state.user = result.user; state.pending = null; localStorage.setItem(TOKEN, state.token); const me = await api('/api/me'); state.networkUrls = me.networkUrls || []; load(); }
@@ -532,7 +590,8 @@ function flipAuthCard(updateView, backwards = false) {
 function continueLogin(event) {
   event.preventDefault();
   const identifier = String(new FormData(event.target).get('email') || '').trim();
-  if (!identifier) return;
+  if (!identifier) { releasePendingAction(); return; }
+  releasePendingAction();
   flipAuthCard(() => {
     state.loginIdentifier = identifier;
     state.loginStep = 'password';
