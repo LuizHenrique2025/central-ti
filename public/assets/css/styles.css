@@ -2430,14 +2430,32 @@ body:not(.light-theme) .demand-detail-heading span {
 
 /* Conversas de e-mail: histórico legível, com resposta no mesmo contexto. */
 .mail-thread-count { display:inline-grid; place-items:center; min-width:19px; padding:1px 5px; margin-left:4px; border-radius:999px; background:#3a4149; color:#e6eaee; font-size:10px; }
-.mail-thread-modal { display:flex; flex-direction:column; max-height:min(760px,92vh); }
-.mail-thread-history { display:grid; gap:10px; overflow:auto; padding:3px 2px 12px; }
-.mail-thread-message { max-width:86%; padding:12px 14px; border:1px solid #3a4047; border-radius:12px 12px 12px 4px; background:#1a1d21; color:#e7eaed; }
-.mail-thread-message.mine { align-self:end; border-radius:12px 12px 4px 12px; background:#283039; }
-.mail-thread-message header { display:flex; justify-content:space-between; gap:18px; margin-bottom:6px; font-size:12px; }
-.mail-thread-message time { color:#aeb7c0; white-space:nowrap; font-size:11px; }
-.mail-thread-message p { margin:0; line-height:1.55; font-size:13px; word-break:break-word; }
-.mail-thread-reply { border-top:1px solid #353a41; padding-top:14px; }
-.mail-thread-reply .field { gap:6px; }
-.mail-thread-reply textarea { resize:vertical; }
-@media (max-width:540px) { .mail-thread-modal { padding:18px; } .mail-thread-message { max-width:94%; } .mail-thread-message header { gap:10px; flex-direction:column; } }
+.mail-thread-modal { width:min(820px,100%); display:flex; flex-direction:column; max-height:min(760px,92vh); padding:0; overflow:hidden; }
+.mail-thread-header { flex:none; align-items:center; margin:0; padding:20px 22px 16px; border-bottom:1px solid #353b43; }
+.mail-thread-person { display:flex; align-items:center; gap:11px; min-width:0; }
+.mail-thread-avatar { flex:none; display:grid; place-items:center; width:36px; height:36px; border-radius:50%; color:#dbe9f8; background:#25415d; font-size:13px; font-weight:800; }
+.mail-thread-header h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:20px; }
+.mail-thread-header .modal-intro { margin:3px 0 0; }
+.mail-thread-history { display:grid; flex:1; min-height:0; gap:12px; overflow:auto; padding:18px 22px; background:linear-gradient(180deg,#161a1f,#121519); }
+.mail-thread-message { max-width:82%; padding:12px 14px; border:1px solid #343c45; border-radius:12px 12px 12px 4px; background:#1e2329; color:#e7eaed; box-shadow:0 2px 6px #0002; }
+.mail-thread-message.mine { align-self:end; border-color:#3d5061; border-radius:12px 12px 4px 12px; background:#27323d; }
+.mail-thread-message header { display:flex; justify-content:space-between; gap:18px; align-items:start; margin-bottom:7px; font-size:12px; }
+.mail-thread-message header span { display:grid; gap:2px; }
+.mail-thread-message header small { color:#a7b5c4; font-size:10px; }
+.mail-thread-message time { color:#9ba8b5; white-space:nowrap; font-size:11px; }
+.mail-thread-message p { margin:0; line-height:1.6; font-size:13px; word-break:break-word; }
+.mail-thread-reply { flex:none; border-top:1px solid #353b43; padding:15px 22px 18px; background:#1a1e23; box-shadow:0 -10px 25px #0002; }
+.mail-thread-reply .field { gap:6px; margin:0; color:#d5dce3; }
+.mail-thread-reply textarea { min-height:78px; resize:vertical; background:#11151a; }
+.mail-thread-reply .modal-actions { margin-top:11px; }
+.light-theme .mail-thread-header { border-bottom-color:#e1e8ef; background:#fff; }
+.light-theme .mail-thread-avatar { color:#1f4f8a; background:#e8f1fb; }
+.light-theme .mail-thread-history { background:#f5f7fa; }
+.light-theme .mail-thread-message { border-color:#dce5ed; color:#263545; background:#fff; box-shadow:0 2px 6px #1e3a5f0d; }
+.light-theme .mail-thread-message.mine { border-color:#c9dced; background:#edf5ff; }
+.light-theme .mail-thread-message header small,.light-theme .mail-thread-message time { color:#67798b; }
+.light-theme .mail-thread-reply { border-top-color:#e1e8ef; background:#fff; box-shadow:0 -8px 20px #1e3a5f0b; }
+.light-theme .mail-thread-reply .field { color:#33465a; }
+.light-theme .mail-thread-reply textarea { background:#fbfdff; }
+@media (max-width:540px) { .mail-thread-header,.mail-thread-history,.mail-thread-reply { padding-inline:16px; } .mail-thread-message { max-width:94%; } .mail-thread-message header { gap:5px; flex-direction:column; } }
+@media (prefers-reduced-motion:no-preference) { .mail-thread-message { transition:transform 160ms cubic-bezier(.22,1,.36,1),box-shadow 160ms cubic-bezier(.22,1,.36,1); } .mail-thread-message:hover { transform:translateY(-1px); box-shadow:0 5px 12px #0003; } }
