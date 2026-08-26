@@ -55,10 +55,12 @@ function repairLegacyExtensions(data) {
 function repairLegacyDemandPriorities(data) {
   for (const demand of data.demandas || []) if (demand.prioridade === 'M?dia' || demand.prioridade === 'M�dia') demand.prioridade = 'Média';
 }
+function normalizeCompletedDemandStatus(record) { if (record?.status === 'Concluida') record.status = 'Concluída'; return record; }
 function normalizeFileDb(data) {
   repairStoredText(data);
   repairLegacyExtensions(data);
   repairLegacyDemandPriorities(data);
+  for (const demand of data.demandas || []) normalizeCompletedDemandStatus(demand);
   for (const key of [...Object.keys(resourceDefinitions), 'users', 'messages', 'auditLogs', 'announcements']) data[key] ||= [];
   for (const user of data.users) { if (user.mustChangePassword === undefined) user.mustChangePassword = verifyPassword('123456', user); if (user.active === undefined) user.active = true; user.activationStatus ||= user.active === false ? 'desativado' : 'ativo'; }
   data.demandStatuses ||= ['Aberta', 'Em andamento', 'Concluída'];
@@ -105,7 +107,7 @@ function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.write
 function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email || '', login: user.login || '', setor: user.setor || '', cpfLast4: user.cpfLast4 || '', perfil: user.perfil, active: user.active !== false, activationStatus: user.activationStatus || 'ativo', permissions: user.permissions || null, mustChangePassword: Boolean(user.mustChangePassword), createdAt: user.createdAt }; }
 function pgDate(value) { return value instanceof Date ? value.toISOString() : value || null; }
 function normalizePgDates(row) { if (!row) return row; const value = { ...row }; for (const key of ['createdAt', 'updatedAt', 'readAt', 'senderDeletedAt', 'recipientDeletedAt', 'senderArchivedAt', 'recipientArchivedAt', 'dataNascimento']) if (key in value) value[key] = pgDate(value[key]); return value; }
-function pgRecord(row) { return { id: row.id, ...row.data, createdAt: pgDate(row.created_at), updatedAt: pgDate(row.updated_at), createdBy: row.created_by, updatedBy: row.updated_by }; }
+function pgRecord(row) { return normalizeCompletedDemandStatus({ id: row.id, ...row.data, createdAt: pgDate(row.created_at), updatedAt: pgDate(row.updated_at), createdBy: row.created_by, updatedBy: row.updated_by }); }
 
 const fileStore = {
   async users() { return readFileDb().users; },
