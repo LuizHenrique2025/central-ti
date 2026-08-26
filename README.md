@@ -52,6 +52,10 @@ No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha preci
 
 Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
 
+### Redefinir senha de um usuário
+
+Entre com um perfil de **Administrador**, abra **Usuários**, localize o cadastro pelo e-mail e clique em **Redefinir senha**. Informe e confirme uma senha temporária. As sessões ativas daquele usuário serão encerradas e ele terá de trocar a senha no próximo acesso.
+
 Para uma implantação corporativa, defina `DATABASE_URL` com a conexão PostgreSQL. Por segurança, a aplicação não cria, altera nem importa dados para esse banco automaticamente. Ela apenas verifica se a estrutura necessária já existe. Para uma criação ou atualização planejada da estrutura, com backup confirmado, defina também `CENTRAL_TI_RUN_MIGRATIONS=true` somente nessa execução. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
 
 ## Scripts para Windows

@@ -221,7 +221,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     assert.equal(created.status, 201);
   }
 
-  const tokenA = await login('usuario-a@centralti.local', 'Inicial2026@');
+  let tokenA = await login('usuario-a@centralti.local', 'Inicial2026@');
   const tokenB = await login('usuario-b@centralti.local', 'Inicial2026@');
   for (const token of [tokenA, tokenB]) {
     const changed = await request('/api/auth/change-password', token, {
@@ -230,6 +230,20 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     });
     assert.equal(changed.status, 200);
   }
+
+  const managedUsers = await request('/api/users', adminToken);
+  const userA = (await managedUsers.json()).users.find(user => user.email === 'usuario-a@centralti.local');
+  const reset = await request(`/api/users/${userA.id}/password`, adminToken, { method: 'PUT', body: JSON.stringify({ password: 'Temporaria2026!' }) });
+  assert.equal(reset.status, 200);
+  assert.equal((await request('/api/me', tokenA)).status, 401);
+
+  tokenA = await login('usuario-a@centralti.local', 'Temporaria2026!');
+  assert.equal((await request('/api/dashboard', tokenA)).status, 403);
+  const setPersonalPassword = await request('/api/auth/change-password', tokenA, { method: 'POST', body: JSON.stringify({ currentPassword: 'Temporaria2026!', newPassword: 'Pessoal2026@' }) });
+  assert.equal(setPersonalPassword.status, 200);
+
+  const forbiddenReset = await request(`/api/users/${userA.id}/password`, tokenB, { method: 'PUT', body: JSON.stringify({ password: 'NaoPode2026!' }) });
+  assert.equal(forbiddenReset.status, 403);
 
   const createdDemand = await request('/api/resources/demandas', tokenA, {
     method: 'POST',
