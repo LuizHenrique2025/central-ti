@@ -154,8 +154,8 @@ const pgStore = {
   async createRecord(resource, record) { await pool.query('INSERT INTO records (id,resource,data,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [record.id, resource, record, record.createdAt, record.updatedAt, record.createdBy, record.updatedBy]); return record; },
   async updateRecord(resource, recordId, fields, userId) { const previous = await this.record(resource, recordId); if (!previous) return null; const updated = { ...previous, ...fields, updatedAt: now(), updatedBy: userId }; await pool.query('UPDATE records SET data=$3,updated_at=$4,updated_by=$5 WHERE resource=$1 AND id=$2', [resource, recordId, updated, updated.updatedAt, userId]); return updated; },
   async deleteRecord(resource, recordId) { const previous = await this.record(resource, recordId); if (!previous) return null; await pool.query('DELETE FROM records WHERE resource=$1 AND id=$2', [resource, recordId]); return previous; },
-  async messagesFor(userId) { return (await pool.query('SELECT id,sender_id AS "senderId",recipient_id AS "recipientId",subject,body,created_at AS "createdAt",read_at AS "readAt",sender_deleted_at AS "senderDeletedAt",recipient_deleted_at AS "recipientDeletedAt" FROM messages WHERE recipient_id=$1 OR sender_id=$1 ORDER BY created_at DESC', [userId])).rows.map(normalizePgDates); },
-  async createMessage(message) { await pool.query('INSERT INTO messages (id,sender_id,recipient_id,subject,body,created_at,read_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [message.id, message.senderId, message.recipientId, message.subject, message.body, message.createdAt, message.readAt]); return message; },
+  async messagesFor(userId) { return (await pool.query('SELECT id,sender_id AS "senderId",recipient_id AS "recipientId",thread_id AS "threadId",reply_to_id AS "replyToId",subject,body,created_at AS "createdAt",read_at AS "readAt",sender_deleted_at AS "senderDeletedAt",recipient_deleted_at AS "recipientDeletedAt" FROM messages WHERE recipient_id=$1 OR sender_id=$1 ORDER BY created_at DESC', [userId])).rows.map(normalizePgDates); },
+  async createMessage(message) { await pool.query('INSERT INTO messages (id,sender_id,recipient_id,thread_id,reply_to_id,subject,body,created_at,read_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)', [message.id, message.senderId, message.recipientId, message.threadId || null, message.replyToId || null, message.subject, message.body, message.createdAt, message.readAt]); return message; },
   async markMessageRead(messageId, userId) { return (await pool.query('UPDATE messages SET read_at=NOW() WHERE id=$1 AND recipient_id=$2 RETURNING id', [messageId, userId])).rows[0]; },
   async deleteMessageFor(messageId, userId) { return (await pool.query('UPDATE messages SET recipient_deleted_at=CASE WHEN recipient_id=$2 THEN NOW() ELSE recipient_deleted_at END, sender_deleted_at=CASE WHEN sender_id=$2 THEN NOW() ELSE sender_deleted_at END WHERE id=$1 AND (recipient_id=$2 OR sender_id=$2) RETURNING id', [messageId, userId])).rows[0]; },
   async announcements() { return (await pool.query('SELECT id,title,body,author_id AS "authorId",author_name AS "authorName",created_at AS "createdAt" FROM announcements ORDER BY created_at DESC')).rows.map(normalizePgDates); },
@@ -178,9 +178,12 @@ async function migratePostgres() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE, login TEXT UNIQUE, setor TEXT NOT NULL DEFAULT '', cpf_hash TEXT UNIQUE, cpf_last4 TEXT NOT NULL DEFAULT '', data_nascimento DATE, perfil TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, activation_status TEXT NOT NULL DEFAULT 'ativo', permissions JSONB NOT NULL DEFAULT '{}'::jsonb, salt TEXT NOT NULL, hash TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     CREATE TABLE IF NOT EXISTS records (id UUID PRIMARY KEY, resource TEXT NOT NULL, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, created_by UUID, updated_by UUID);
     CREATE INDEX IF NOT EXISTS records_resource_updated_idx ON records(resource, updated_at DESC);
-    CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY, sender_id UUID NOT NULL, recipient_id UUID NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, read_at TIMESTAMPTZ, sender_deleted_at TIMESTAMPTZ, recipient_deleted_at TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY, sender_id UUID NOT NULL, recipient_id UUID NOT NULL, thread_id UUID, reply_to_id UUID, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, read_at TIMESTAMPTZ, sender_deleted_at TIMESTAMPTZ, recipient_deleted_at TIMESTAMPTZ);
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_deleted_at TIMESTAMPTZ;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS recipient_deleted_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_id UUID;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID;
+    CREATE INDEX IF NOT EXISTS messages_thread_created_idx ON messages(thread_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, user_id UUID, action TEXT NOT NULL, resource TEXT, record_id UUID, details JSONB, created_at TIMESTAMPTZ NOT NULL);
     CREATE TABLE IF NOT EXISTS announcements (id UUID PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, author_id UUID, author_name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL);
     CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL);
@@ -511,7 +514,29 @@ async function api(req, res, url) {
   if (req.method === 'POST' && pathname === '/api/announcements') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem publicar comunicados.'); const { title, body } = await requestBody(req); const cleanTitle = repairTextEncoding(String(title || '').trim()), cleanBody = repairTextEncoding(String(body || '').trim()); if (!cleanTitle || cleanTitle.length > 120 || !cleanBody || cleanBody.length > 2000) return error(res, 422, 'Informe título e comunicado com até 2.000 caracteres.'); const announcement = { id: id(), title: cleanTitle, body: cleanBody, authorId: user.id, authorName: user.nome, createdAt: now() }; await store.createAnnouncement(announcement); await log(user.id, 'publicou comunicado', 'announcements', announcement.id, { title: cleanTitle }); return respond(res, 201, { announcement }); }
   const announcementMatch = pathname.match(/^\/api\/announcements\/([\w-]+)$/); if (req.method === 'DELETE' && announcementMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem remover comunicados.'); const removed = await store.deleteAnnouncement(announcementMatch[1]); if (!removed) return error(res, 404, 'Comunicado não encontrado.'); await log(user.id, 'removeu comunicado', 'announcements', removed.id, { title: removed.title }); return respond(res, 200, { ok: true }); }
   if (req.method === 'GET' && pathname === '/api/messages') { const people = new Map((await store.users()).map(person => [person.id, person])); const messages = (await store.messagesFor(user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(message => ({ ...message, sender: publicUser(people.get(message.senderId)), recipient: publicUser(people.get(message.recipientId)) })); return respond(res, 200, { messages }); }
-  if (req.method === 'POST' && pathname === '/api/messages') { const { recipientId, subject, body } = await requestBody(req); if (!await store.findUser(recipientId) || !String(subject || '').trim() || String(subject).length > 160 || !String(body || '').trim() || String(body).length > 5000) return error(res, 422, 'Informe destinatário, assunto e mensagem.'); const message = { id: id(), senderId: user.id, recipientId, subject: String(subject).trim(), body: String(body).trim(), createdAt: now(), readAt: null }; await store.createMessage(message); await log(user.id, 'enviou mensagem', 'messages', message.id, { recipientId, subject: message.subject }); return respond(res, 201, { message }); }
+  if (req.method === 'POST' && pathname === '/api/messages') {
+    const { recipientId: requestedRecipientId, subject: requestedSubject, body, replyToId } = await requestBody(req);
+    const cleanBody = String(body || '').trim();
+    if (!cleanBody || cleanBody.length > 5000) return error(res, 422, 'Informe uma mensagem de até 5.000 caracteres.');
+    let recipientId = requestedRecipientId;
+    let subject = String(requestedSubject || '').trim();
+    let threadId;
+    let parent = null;
+    if (replyToId) {
+      parent = (await store.messagesFor(user.id)).find(message => message.id === replyToId);
+      if (!parent) return error(res, 404, 'Mensagem original não encontrada.');
+      recipientId = parent.senderId === user.id ? parent.recipientId : parent.senderId;
+      threadId = parent.threadId || parent.id;
+      subject = parent.subject.replace(/^(?:re:\s*)+/i, '').trim();
+      subject = `Re: ${subject}`;
+    }
+    if (!await store.findUser(recipientId) || recipientId === user.id || !subject || subject.length > 160) return error(res, 422, 'Informe destinatário, assunto e mensagem.');
+    const messageId = id();
+    const message = { id: messageId, senderId: user.id, recipientId, threadId: threadId || messageId, replyToId: parent?.id || null, subject, body: cleanBody, createdAt: now(), readAt: null };
+    await store.createMessage(message);
+    await log(user.id, 'enviou mensagem', 'messages', message.id, { recipientId, subject: message.subject, threadId: message.threadId, replyToId: message.replyToId });
+    return respond(res, 201, { message });
+  }
   const readMatch = pathname.match(/^\/api\/messages\/([\w-]+)\/read$/); if (req.method === 'PUT' && readMatch) { const updated = await store.markMessageRead(readMatch[1], user.id); if (!updated) return error(res, 404, 'Mensagem não encontrada.'); return respond(res, 200, { ok: true }); }
   const deleteMessageMatch = pathname.match(/^\/api\/messages\/([\w-]+)$/); if (req.method === 'DELETE' && deleteMessageMatch) { const deleted = await store.deleteMessageFor(deleteMessageMatch[1], user.id); if (!deleted) return error(res, 404, 'Mensagem não encontrada.'); await log(user.id, 'moveu mensagem para apagadas', 'messages', deleteMessageMatch[1]); return respond(res, 200, { ok: true }); }
   if (req.method === 'GET' && pathname === '/api/audit') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem consultar a auditoria.'); return respond(res, 200, { logs: await store.audits(url.searchParams.get('resource'), url.searchParams.get('recordId')) }); }

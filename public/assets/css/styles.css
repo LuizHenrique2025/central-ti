@@ -2382,3 +2382,17 @@ body:not(.light-theme) .demand-detail-heading span {
 .sidebar .nav .nav-icon:has(.wifi-icon),
 .sidebar .avatar { color:#17191c; background:linear-gradient(145deg,#f0f2f4,#8c939b); box-shadow:0 6px 18px #0008,inset 0 1px 0 #fff; }
 .wifi-icon { width:17px; height:17px; fill:currentColor; }
+
+/* Conversas de e-mail: histórico legível, com resposta no mesmo contexto. */
+.mail-thread-count { display:inline-grid; place-items:center; min-width:19px; padding:1px 5px; margin-left:4px; border-radius:999px; background:#3a4149; color:#e6eaee; font-size:10px; }
+.mail-thread-modal { display:flex; flex-direction:column; max-height:min(760px,92vh); }
+.mail-thread-history { display:grid; gap:10px; overflow:auto; padding:3px 2px 12px; }
+.mail-thread-message { max-width:86%; padding:12px 14px; border:1px solid #3a4047; border-radius:12px 12px 12px 4px; background:#1a1d21; color:#e7eaed; }
+.mail-thread-message.mine { align-self:end; border-radius:12px 12px 4px 12px; background:#283039; }
+.mail-thread-message header { display:flex; justify-content:space-between; gap:18px; margin-bottom:6px; font-size:12px; }
+.mail-thread-message time { color:#aeb7c0; white-space:nowrap; font-size:11px; }
+.mail-thread-message p { margin:0; line-height:1.55; font-size:13px; word-break:break-word; }
+.mail-thread-reply { border-top:1px solid #353a41; padding-top:14px; }
+.mail-thread-reply .field { gap:6px; }
+.mail-thread-reply textarea { resize:vertical; }
+@media (max-width:540px) { .mail-thread-modal { padding:18px; } .mail-thread-message { max-width:94%; } .mail-thread-message header { gap:10px; flex-direction:column; } }
