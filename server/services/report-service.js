@@ -15,7 +15,11 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
     const modules = visible.map(resource => ({ resource, total: data[resource].length }));
     const alerts = ['computadores', 'equipamentos'].filter(resource => data[resource]).flatMap(resource => data[resource].filter(record => record.avaliacao && record.avaliacao !== 'Bom').map(record => ({ resource, item: resource === 'computadores' ? record.patrimonio : record.equipamento, responsavel: record.responsavel, avaliacao: record.avaliacao }))).concat((data.ramais || []).filter(record => record.funcionamento && record.funcionamento !== 'Bom funcionamento').map(record => ({ resource: 'ramais', item: `Ramal ${record.ramal}`, responsavel: record.responsavel, avaliacao: record.funcionamento })));
     const demands = data.demandas || [];
-    const demandStatus = ['Aberta', 'Em andamento', 'Concluída'].map(status => ({ status, total: demands.filter(record => record.status === status).length }));
+    const demandStatus = [...demands.reduce((totals, record) => {
+      const status = String(record.status || 'Sem status').trim() || 'Sem status';
+      totals.set(status, (totals.get(status) || 0) + 1);
+      return totals;
+    }, new Map()).entries()].map(([status, total]) => ({ status, total }));
     const activePrograms = canAccess(user, 'programas') ? (await store.records('programas')).filter(record => record.status !== 'Cancelado' && Number.isSafeInteger(Number(record.valor)) && Number(record.valor) > 0) : [];
     const programCosts = activePrograms.reduce((costs, record) => { const value = Number(record.valor); if (record.periodicidade === 'Mensal') costs.monthly += value; else costs.annual += value; return costs; }, { monthly: 0, annual: 0 });
     programCosts.monthlyEquivalent = Math.round(programCosts.monthly + programCosts.annual / 12);
