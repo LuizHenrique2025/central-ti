@@ -2427,6 +2427,9 @@ body:not(.light-theme) .demand-detail-heading span {
 .light-theme .demand-card-sla { border-color:#bfdbfe; color:#1d4f91; background:#eff6ff; }
 .light-theme .demand-card select { border-color:#d7e1ea; background:#f4f7fa; }
 .light-theme .add-record,.light-theme .quick-add,.light-theme .compose-button { color:#fff; background:linear-gradient(135deg,var(--ct-blue),var(--ct-blue-strong)); box-shadow:0 5px 13px #2563eb2b; }
+.light-theme .link-button { color:#1d5fae; }
+.light-theme .link-button:hover { color:#164b88; text-decoration:underline; }
+.light-theme .link-button:focus-visible { outline:2px solid #2563eb; outline-offset:2px; border-radius:4px; }
 
 /* Conversas de e-mail: histórico legível, com resposta no mesmo contexto. */
 .mail-thread-count { display:inline-grid; place-items:center; min-width:19px; padding:1px 5px; margin-left:4px; border-radius:999px; background:#3a4149; color:#e6eaee; font-size:10px; }
