@@ -48,7 +48,7 @@ Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **
 | TI | ti@centralti.local | 123456 |
 | Recepção | recepcao@centralti.local | 123456 |
 
-No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 12 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. As senhas são guardadas somente como hash com `scrypt` e salt individual. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. As senhas são guardadas somente como hash com `scrypt` e salt individual. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
 
 Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
 
