@@ -30,6 +30,10 @@ storage/              Dados locais (não enviados ao GitHub)
 backups/              Cópias locais (não enviadas ao GitHub)
 ```
 
+## Fluxo de desenvolvimento
+
+Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entregue por Pull Request. Consulte [AGENTS.md](AGENTS.md) para o fluxo obrigatório: Issue antes da implementação, branch por Issue, testes, PR com `Closes #<número>` e deploy somente após aprovação.
+
 ### Compartilhar na mesma rede
 
 Com o sistema iniciado nesta máquina, o painel mostra o endereço de rede local, por exemplo `http://192.168.x.x:3000`. Envie esse endereço ao seu amigo: ambos trabalharão com os mesmos cadastros e mensagens em tempo real ao atualizar a página.
@@ -44,7 +48,9 @@ Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **
 | TI | ti@centralti.local | 123456 |
 | Recepção | recepcao@centralti.local | 123456 |
 
-No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. As senhas são guardadas somente como hash com `scrypt` e salt individual. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+
+Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
 
 Para uma implantação corporativa, defina `DATABASE_URL` com a conexão PostgreSQL. Por segurança, a aplicação não cria, altera nem importa dados para esse banco automaticamente. Ela apenas verifica se a estrutura necessária já existe. Para uma criação ou atualização planejada da estrutura, com backup confirmado, defina também `CENTRAL_TI_RUN_MIGRATIONS=true` somente nessa execução. Use HTTPS, recuperação de senha e autenticação institucional antes de publicar fora da rede interna.
 
