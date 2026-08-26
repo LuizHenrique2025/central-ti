@@ -1,4 +1,4 @@
-:root { --ink:#14202d; --muted:#687588; --line:#e7ecf2; --bg:#f4f7fa; --blue:#1677ff; --navy:#10283f; --green:#12a879; --amber:#e99b25; --red:#df5b60; }
+:root { --ink:#14202d; --muted:#687588; --line:#e7ecf2; --bg:#f4f7fa; --blue:#1677ff; --navy:#10283f; --green:#12a879; --amber:#e99b25; --red:#df5b60; --motion-enter:180ms; --motion-exit:140ms; --motion-ease:cubic-bezier(.22,1,.36,1); }
 * { box-sizing:border-box; }
 body { margin:0; font-family:"DM Sans",sans-serif; color:var(--ink); background:var(--bg); }
 button,input,select,textarea { font:inherit; }
@@ -2256,6 +2256,54 @@ body:not(.light-theme) .demand-detail-heading span {
 .light-theme .system-confirmation p { color:#5e6d7f; }
 .light-theme .system-confirmation-actions .secondary { border-color:#d6dee6; background:#f3f6f9; color:#3e5064; }
 @media (max-width:540px) { .system-confirmation { align-items:end; padding:12px; } .system-confirmation-card { grid-template-columns:34px minmax(0,1fr); padding:18px; } .system-confirmation-icon { width:34px; height:34px; } .system-confirmation-actions { display:grid; grid-template-columns:1fr 1fr; } .system-confirmation-actions button { width:100%; } }
+
+/* Continuidade funcional: superfícies entram rápido e saem ainda mais discretamente. */
+.modal-backdrop,
+.system-confirmation,
+.toast {
+  transition:opacity var(--motion-enter) var(--motion-ease),transform var(--motion-enter) var(--motion-ease),filter var(--motion-enter) var(--motion-ease);
+}
+.modal-backdrop .modal,
+.system-confirmation-card {
+  transition:opacity var(--motion-enter) var(--motion-ease),transform var(--motion-enter) var(--motion-ease),filter var(--motion-enter) var(--motion-ease);
+}
+@starting-style {
+  .modal-backdrop,
+  .system-confirmation {
+    opacity:0;
+  }
+  .modal-backdrop .modal,
+  .system-confirmation-card,
+  .toast {
+    opacity:0;
+    transform:translateY(8px);
+    filter:blur(4px);
+  }
+}
+.modal-backdrop.is-closing,
+.system-confirmation.is-closing,
+.toast.is-closing {
+  opacity:0;
+  pointer-events:none;
+  transition-duration:var(--motion-exit);
+}
+.modal-backdrop.is-closing .modal,
+.system-confirmation.is-closing .system-confirmation-card,
+.toast.is-closing {
+  opacity:0;
+  transform:translateY(4px);
+  filter:blur(2px);
+  transition-duration:var(--motion-exit);
+}
+@media (prefers-reduced-motion:reduce) {
+  .modal-backdrop,
+  .modal-backdrop .modal,
+  .system-confirmation,
+  .system-confirmation-card,
+  .toast {
+    transition:none !important;
+  }
+}
 
 .sidebar .nav .nav-icon:has(.wifi-icon),
 .sidebar .avatar { color:#17191c; background:linear-gradient(145deg,#f0f2f4,#8c939b); box-shadow:0 6px 18px #0008,inset 0 1px 0 #fff; }
