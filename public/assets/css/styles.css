@@ -2298,6 +2298,25 @@ body:not(.light-theme) .demand-detail-heading span {
 .skeleton-table-body .skeleton-line { margin:0; }
 .skeleton-kanban .kanban-column { min-height:230px; }
 .skeleton-kanban .skeleton-card { min-height:78px; margin-top:12px; padding:12px; background:color-mix(in srgb,var(--line) 45%,transparent); border:1px solid var(--line); border-radius:9px; }
+.action-pending {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  cursor:wait;
+}
+.button-spinner {
+  width:14px;
+  height:14px;
+  flex:0 0 14px;
+  border:2px solid currentColor;
+  border-right-color:transparent;
+  border-radius:50%;
+  animation:button-spinner .75s linear infinite;
+}
+@keyframes button-spinner {
+  to { transform:rotate(360deg); }
+}
 @media (max-width:540px) {
   .skeleton-table-head,
   .skeleton-table-body > div { grid-template-columns:1.35fr 1fr .75fr; gap:10px; padding:13px; }
@@ -2353,6 +2372,10 @@ body:not(.light-theme) .demand-detail-heading span {
   .ui-switch .slider .circle,
   .ui-switch .slider .circle::before {
     transition:none !important;
+  }
+  .button-spinner {
+    animation:none;
+    border-right-color:currentColor;
   }
 }
 
