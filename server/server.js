@@ -270,6 +270,7 @@ sanitize = function (values, keys) {
   if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   return sanitizeOriginal(values, keys);
 };
+function sanitizeScreenshot(value) { if (!value) return undefined; const allowed = { 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff', 'image/webp': '52494646' }; if (!allowed[value.mime] || typeof value.data !== 'string' || value.data.length > 6_700_000) return null; const image = Buffer.from(value.data, 'base64'); return image.length && image.length <= 5_000_000 && image.subarray(0, allowed[value.mime].length / 2).toString('hex') === allowed[value.mime] ? { mime: value.mime, data: image.toString('base64') } : null; }
 function sanitizeDemand(values) {
   if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
@@ -287,6 +288,7 @@ function sanitizeDemand(values) {
     for (const key of ['empresa', 'contato', 'email', 'descricao']) { const value = repairTextEncoding(String(values[key] || '').trim()); if (!value || value.length > (key === 'descricao' ? 3000 : 250)) return null; demand[key] = value; }
     if (!/^\S+@\S+\.\S+$/.test(demand.email)) return null;
   }
+  const screenshot = sanitizeScreenshot(values.anexoPrint); if (screenshot === null) return null; if (screenshot) demand.anexoPrint = screenshot;
   return demand;
 }
 function demandDetailRequirement(subject) {
@@ -603,8 +605,9 @@ async function api(req, res, url) {
     const [, resource, recordId] = match; if (!resourceDefinitions[resource] || DISABLED_RESOURCES.has(resource)) return error(res, 404, 'Recurso não encontrado.'); const mode = req.method === 'GET' ? (recordId ? 'consult' : 'list') : req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'update' : 'delete'; if (!canAccess(user, resource, mode)) return error(res, 403, 'Você não tem permissão para esta área.');
     if (req.method === 'GET') { let records = await store.records(resource); if (recordId) records = records.filter(record => record.id === recordId); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); if (resource === 'demandas') { const people = new Map((await store.users()).map(person => [person.id, person.nome])); for (const record of records) record.interacoes = (record.interacoes || []).map(item => ({ ...item, autorNome: people.get(item.autorId) || 'Usuário removido' })); } if (recordId && !records.length) return error(res, 404, 'Registro não encontrado.'); return respond(res, 200, { records }); }
     if (req.method === 'POST' && !recordId) {
-      const body = await requestBody(req); if (resource === 'patrimonio') body.codigo = await nextPatrimonyCode(); if (resource === 'demandas' && hospitalOnly(user) && body.tipo !== 'externa') return error(res, 403, 'Este usuário pode abrir somente demandas hospitalares.'); if (resource === 'demandas' && hospitalOnly(user)) { body.solicitante = user.nome; body.status = 'Aberta'; body.tecnicoResponsavel = ''; body.prazoSla = ''; } const payload = resource === 'demandas' ? (hospitalOnly(user) ? sanitizeHospitalDemand(body, user) : sanitizeDemand(body)) : sanitize(body, resourceDefinitions[resource]);
+      const body = await requestBody(req, resource === 'demandas' ? 7_000_000 : 1_000_000); if (resource === 'patrimonio') body.codigo = await nextPatrimonyCode(); if (resource === 'demandas' && hospitalOnly(user) && body.tipo !== 'externa') return error(res, 403, 'Este usuário pode abrir somente demandas hospitalares.'); if (resource === 'demandas' && hospitalOnly(user)) { body.solicitante = user.nome; body.status = 'Aberta'; body.tecnicoResponsavel = ''; body.prazoSla = ''; } const payload = resource === 'demandas' ? (hospitalOnly(user) ? sanitizeHospitalDemand(body, user) : sanitizeDemand(body)) : sanitize(body, resourceDefinitions[resource]);
       if (!payload) return error(res, 422, resource === 'demandas' ? 'Revise os campos obrigatórios do ticket.' : 'Preencha todos os campos corretamente.');
+      if (resource === 'demandas') { const screenshot = sanitizeScreenshot(body.anexoPrint); if (screenshot === null) return error(res, 422, 'Envie somente um print PNG, JPG ou WEBP de até 5 MB.'); if (screenshot) payload.anexoPrint = screenshot; }
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
       if (resource === 'demandas' && hospitalOnly(user)) payload.empresa = 'Hospital Dia Revitalite';
