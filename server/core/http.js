@@ -22,7 +22,7 @@ function requestError(message, statusCode) {
   return exception;
 }
 
-function requestBody(req) {
+function requestBody(req, maxBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     const contentType = String(req.headers['content-type'] || '').toLowerCase();
     if (contentType && !contentType.startsWith('application/json')) return reject(requestError('Content-Type deve ser application/json.', 415));
@@ -30,7 +30,7 @@ function requestBody(req) {
     let length = 0;
     req.on('data', chunk => {
       length += chunk.length;
-      if (length > 1_000_000) {
+      if (length > maxBytes) {
         reject(requestError('Payload muito grande.', 413));
         req.destroy();
         return;
