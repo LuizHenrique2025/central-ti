@@ -38,5 +38,7 @@ module.exports = {
   SMTP_SECURE: process.env.SMTP_SECURE !== 'false',
   SMTP_USER: process.env.SMTP_USER,
   SMTP_PASS: process.env.SMTP_PASS,
-  MAIL_FROM: process.env.MAIL_FROM
+  MAIL_FROM: process.env.MAIL_FROM,
+  ATTACHMENT_MAX_COUNT: Number(process.env.CENTRAL_TI_ATTACHMENT_MAX_COUNT || 100),
+  ATTACHMENT_MAX_STORAGE_BYTES: Number(process.env.CENTRAL_TI_ATTACHMENT_MAX_STORAGE_BYTES || 250_000_000)
 };
