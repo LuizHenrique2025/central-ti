@@ -71,5 +71,7 @@ module.exports = {
     name: process.env.CENTRAL_TI_BOOTSTRAP_ADMIN_NAME.trim(),
     email: process.env.CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL.trim().toLowerCase(),
     password: process.env.CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD
-  } : null
+  } : null,
+  ATTACHMENT_MAX_COUNT: Number(process.env.CENTRAL_TI_ATTACHMENT_MAX_COUNT || 100),
+  ATTACHMENT_MAX_STORAGE_BYTES: Number(process.env.CENTRAL_TI_ATTACHMENT_MAX_STORAGE_BYTES || 250_000_000)
 };
