@@ -3,13 +3,17 @@ const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
+const { spawn, spawnSync } = require('node:child_process');
 const { after, before, test } = require('node:test');
 const { createEncryptedStore } = require('../../server/core/encrypted-store');
 
 let child;
 let baseUrl;
 let temporaryRoot;
+const bootstrapEmail = `admin-${crypto.randomUUID()}@centralti.test`;
+const bootstrapPassword = `Fase1!${crypto.randomBytes(18).toString('hex')}`;
+const bootstrapName = 'Administrador de teste';
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -48,7 +52,10 @@ before(async () => {
       BACKUP_DIR: path.join(temporaryRoot, 'backups'),
       CENTRAL_TI_DATA_ENCRYPTION_KEY: 'q1qY1Z7Yo0DZ5Nxcjr9m9P4hZ4KaGPIqdveMyoeujh0=',
       DATABASE_URL: '',
-      EMAIL_2FA_REQUIRED: 'false'
+      EMAIL_2FA_REQUIRED: 'false',
+      CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: bootstrapName,
+      CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: bootstrapEmail,
+      CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: bootstrapPassword
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -70,14 +77,17 @@ test('entrega a interface e informa saúde do serviço', async () => {
   assert.equal(page.headers.get('x-frame-options'), 'DENY');
   assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
 
-  const [script, stylesheet] = await Promise.all([
+  const [script, stylesheet, safeRender] = await Promise.all([
     fetch(`${baseUrl}/assets/js/app.js`),
-    fetch(`${baseUrl}/assets/css/styles.css`)
+    fetch(`${baseUrl}/assets/css/styles.css`),
+    fetch(`${baseUrl}/assets/js/core/safe-render.js`)
   ]);
   assert.equal(script.status, 200);
   assert.match(script.headers.get('content-type'), /javascript/);
   assert.equal(stylesheet.status, 200);
   assert.match(stylesheet.headers.get('content-type'), /text\/css/);
+  assert.equal(safeRender.status, 200);
+  assert.match(await safeRender.text(), /function escapeAttribute/);
 
   const configScript = await fetch(`${baseUrl}/assets/js/core/config.js`);
   assert.equal(configScript.status, 200);
@@ -92,18 +102,103 @@ test('entrega a interface e informa saúde do serviço', async () => {
   assert.equal(invalidContentType.status, 415);
 });
 
-test('rejeita senha inválida e aceita a conta demonstrativa inicial', async () => {
+test('não cria base nova sem bootstrap administrativo explícito', () => {
+  const { createSeedData } = require('../../server/domain/seed-data');
+  assert.throws(() => createSeedData({ id: crypto.randomUUID, now: () => new Date().toISOString(), passwordHash: () => ({}) }), /CENTRAL_TI_BOOTSTRAP_ADMIN/);
+});
+
+test('modo de produção rejeita HTTP direto e aceita somente o proxy HTTPS confiável', async () => {
+  const port = await freePort();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'central-ti-https-test-'));
+  const childProcess = spawn(process.execPath, ['server/server.js'], {
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: {
+      ...process.env,
+      NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port),
+      CENTRAL_TI_DATA_DIR: path.join(root, 'storage'), BACKUP_DIR: path.join(root, 'backups'),
+      CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: 'Administrador HTTPS',
+      CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: `https-${crypto.randomUUID()}@centralti.test`,
+      CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: `Https!${crypto.randomBytes(18).toString('hex')}`,
+      CENTRAL_TI_TRUST_PROXY: 'true', CENTRAL_TI_REQUIRE_HTTPS: 'false', DATABASE_URL: '', EMAIL_2FA_REQUIRED: 'false'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      try { if ((await fetch(`${url}/api/health`, { headers: { 'x-forwarded-proto': 'https' } })).ok) break; } catch {}
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const direct = await fetch(`${url}/api/health`);
+    assert.equal(direct.status, 426);
+    const proxied = await fetch(`${url}/api/health`, { headers: { 'x-forwarded-proto': 'https' } });
+    assert.equal(proxied.status, 200);
+    assert.equal(proxied.headers.get('strict-transport-security'), 'max-age=15552000');
+  } finally {
+    if (childProcess.exitCode === null) {
+      childProcess.kill();
+      await new Promise(resolve => childProcess.once('exit', resolve));
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('produção falha com proxy não confiável ou host exposto, mesmo com HTTPS desabilitado no ambiente', () => {
+  const cwd = path.resolve(__dirname, '..', '..');
+  const inspectConfig = environment => spawnSync(process.execPath, ['-e', "require('./server/core/config')"], {
+    cwd,
+    env: { ...process.env, NODE_ENV: 'production', CENTRAL_TI_REQUIRE_HTTPS: 'false', ...environment },
+    encoding: 'utf8'
+  });
+
+  const untrustedProxy = inspectConfig({ HOST: '127.0.0.1', CENTRAL_TI_TRUST_PROXY: 'false' });
+  assert.notEqual(untrustedProxy.status, 0);
+  assert.match(untrustedProxy.stderr, /CENTRAL_TI_TRUST_PROXY=true/);
+
+  const exposedHost = inspectConfig({ HOST: '0.0.0.0', CENTRAL_TI_TRUST_PROXY: 'true' });
+  assert.notEqual(exposedHost.status, 0);
+  assert.match(exposedHost.stderr, /HOST deve ser um endereço local/);
+});
+
+test('payloads XSS armazenados permanecem valores de atributo, não handlers executáveis', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  const { escapeAttribute } = require('../../public/assets/js/core/safe-render');
+  const payloads = [
+    "grupo');globalThis.executed=true;//",
+    '" autofocus onfocus="globalThis.executed=true',
+    '<img src=x onerror="globalThis.executed=true">&'
+  ];
+
+  for (const payload of payloads) {
+    const encoded = escapeAttribute(payload);
+    const rendered = `<button data-action="search" data-search-term="${encoded}">grupo</button>`;
+    assert.doesNotMatch(encoded, /[<>\"]/);
+    assert.match(rendered, /^<button data-action="search" data-search-term="/);
+    assert.match(encoded, /&(amp|lt|gt|#39|quot);/);
+    assert.equal(rendered.includes('onclick='), false);
+  }
+
+  assert.doesNotMatch(source, /onclick="setSearch\('\$\{esc\(item\.group\)\}'\)"/);
+  assert.doesNotMatch(source, /ondrop="dropDemand\(event,'\$\{esc\(status\)\}'\)"/);
+  assert.match(source, /window\.CentralTiSafeRender\?\.escapeAttribute \|\|/);
+  assert.match(source, /const esc = escapeAttribute;/);
+  assert.match(source, /data-search-term="\$\{esc\(item\.group\)\}"/);
+  assert.match(source, /data-drop-status="\$\{esc\(status\)\}"/);
+});
+
+test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
   const invalid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@centralti.local', password: 'incorreta' })
+    body: JSON.stringify({ email: bootstrapEmail, password: 'incorreta' })
   });
   assert.equal(invalid.status, 401);
 
   const valid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@centralti.local', password: '123456' })
+    body: JSON.stringify({ email: bootstrapEmail, password: bootstrapPassword })
   });
   assert.equal(valid.status, 200);
   const session = await valid.json();
@@ -141,10 +236,10 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     headers: { authorization: `Bearer ${token}`, ...(options.body ? { 'content-type': 'application/json' } : {}) }
   });
 
-  const adminToken = await login('admin@centralti.local', '123456');
+  const adminToken = await login(bootstrapEmail, bootstrapPassword);
   const changedAdmin = await request('/api/auth/change-password', adminToken, {
     method: 'POST',
-    body: JSON.stringify({ currentPassword: '123456', newPassword: 'Abcdef1!' })
+    body: JSON.stringify({ currentPassword: bootstrapPassword, newPassword: 'Abcdef1!' })
   });
   assert.equal(changedAdmin.status, 200);
 
@@ -200,7 +295,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(deletionRecord.nomePaciente, 'Paciente de teste');
   assert.equal(deletionRecord.categoriaMotivoExclusao, 'Atendimento duplicado');
   assert.equal(deletionRecord.motivoExclusao, 'Atendimento registrado em duplicidade.');
-  assert.equal(deletionRecord.exclusaoConcluidaPor, 'Administrador');
+  assert.equal(deletionRecord.exclusaoConcluidaPor, bootstrapName);
   assert.ok(deletionRecord.exclusaoConcluidaEm);
 
   const incompleteRateUpdate = await request('/api/resources/demandas', adminToken, {
@@ -310,7 +405,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(assigned.status, 200);
   const assignedRecord = (await assigned.json()).record;
-  assert.equal(assignedRecord.tecnicoResponsavel, 'Administrador');
+  assert.equal(assignedRecord.tecnicoResponsavel, bootstrapName);
   assert.equal(assignedRecord.status, 'Em andamento');
 
   const adminComment = await request(`/api/resources/demandas/${demand.id}/comments`, adminToken, {
@@ -357,5 +452,5 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
 
   const persisted = fs.readFileSync(path.join(temporaryRoot, 'storage', 'central-ti.json'), 'utf8');
   assert.match(persisted, /"encrypted"/);
-  assert.equal(persisted.includes('admin@centralti.local'), false);
+  assert.equal(persisted.includes(bootstrapEmail), false);
 });

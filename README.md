@@ -10,7 +10,7 @@ Requer Node.js 20 ou superior.
 npm start
 ```
 
-Abra `http://localhost:3000` no navegador.
+Em desenvolvimento, abra `http://localhost:3000` no navegador.
 
 ## Estrutura do projeto
 
@@ -34,21 +34,25 @@ backups/              Cópias locais (não enviadas ao GitHub)
 
 Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entregue por Pull Request. Consulte [AGENTS.md](AGENTS.md) para o fluxo obrigatório: Issue antes da implementação, branch por Issue, testes, PR com `Closes #<número>` e deploy somente após aprovação.
 
-### Compartilhar na mesma rede
+### Desenvolvimento na mesma rede
 
 Com o sistema iniciado nesta máquina, o painel mostra o endereço de rede local, por exemplo `http://192.168.x.x:3000`. Envie esse endereço ao seu amigo: ambos trabalharão com os mesmos cadastros e mensagens em tempo real ao atualizar a página.
 
 Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **Redes privadas**. O computador que executa `npm start` deve ficar ligado enquanto houver usuários acessando.
 
-## Acessos iniciais
+## Primeiro administrador
 
-| Perfil | E-mail | Senha |
-| --- | --- | --- |
-| Administrador | admin@centralti.local | 123456 |
-| TI | ti@centralti.local | 123456 |
-| Recepção | recepcao@centralti.local | 123456 |
+Uma base nova não possui contas demonstrativas ou credenciais previsíveis. Antes do primeiro início, defina fora do Git as três variáveis `CENTRAL_TI_BOOTSTRAP_ADMIN_NAME`, `CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL` e `CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD`. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo.
 
-No primeiro acesso, as contas demonstrativas devem trocar a senha. A senha precisa ter ao menos 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo. As senhas são guardadas somente como hash com `scrypt` e salt individual. Os dados são persistidos em `storage/central-ti.json`, que é criado no primeiro início.
+Depois que a primeira conta for criada, remova essas variáveis do ambiente. Instalações já existentes preservam os usuários e dados atuais. As senhas são guardadas somente como hash com `scrypt` e salt individual.
+
+## Produção com HTTPS
+
+Em produção, defina `NODE_ENV=production`. HTTPS passa a ser obrigatório e não pode ser desligado por variável de ambiente. A Central TI só inicia se `CENTRAL_TI_TRUST_PROXY=true` e `HOST` for local (`127.0.0.1`, `::1` ou `localhost`). Publique o sistema por um reverse proxy, como Caddy ou Nginx:
+
+`Cliente → HTTPS → Reverse proxy → Central TI (127.0.0.1:3000)`
+
+O proxy deve encaminhar `X-Forwarded-Proto: https`; então defina `CENTRAL_TI_TRUST_PROXY=true`. Não exponha diretamente a porta do Node. A aplicação retorna HTTP 426 para tráfego direto inseguro e envia HSTS. A opção `CENTRAL_TI_REQUIRE_HTTPS` pode ser usada apenas fora de produção para antecipar esse bloqueio em um ambiente controlado.
 
 Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
 

@@ -5,6 +5,7 @@ const { SECURITY_HEADERS } = require('./http');
 const PUBLIC_FILES = new Set([
   '/index.html',
   '/assets/js/core/config.js',
+  '/assets/js/core/safe-render.js',
   '/assets/js/app.js',
   '/assets/js/core/bootstrap.js',
   '/assets/css/styles.css'

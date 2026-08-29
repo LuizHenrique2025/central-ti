@@ -1,7 +1,11 @@
+const config = require('./config');
+
 const SECURITY_HEADERS = {
   'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer',
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', 'cross-origin-opener-policy': 'same-origin', 'cross-origin-resource-policy': 'same-origin'
 };
+
+if (config.REQUIRE_HTTPS) SECURITY_HEADERS['strict-transport-security'] = 'max-age=15552000';
 
 function respond(res, status, data, headers = {}) {
   res.writeHead(status, {
