@@ -32,7 +32,13 @@ function collaboratorPermissions() { return { demandas: { list: true, create: tr
 function hospitalOnly(user) { return user.perfil !== 'admin' && Boolean(user.permissions?.demandas); }
 function canViewAllDemands(user) { return user.perfil === 'admin' || user.perfil === 'ti'; }
 function demandBelongsToUser(record, user) { return canViewAllDemands(user) || record.createdBy === user.id || record.solicitanteId === user.id; }
-function initialData() { return createSeedData({ id, now, passwordHash }); }
+function initialData() {
+  const admin = config.BOOTSTRAP_ADMIN;
+  if (!admin || !admin.name || admin.name.length > 120 || !/^\S+@\S+\.\S+$/.test(admin.email) || !validPassword(admin.password)) {
+    throw new Error('Para criar a primeira base, configure CENTRAL_TI_BOOTSTRAP_ADMIN_NAME, CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL e uma CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD forte.');
+  }
+  return createSeedData({ id, now, passwordHash, bootstrapAdmin: admin });
+}
 function repairTextEncoding(value) {
   if (typeof value !== 'string' || !/[\u00C3\u00C2\u00E2]/.test(value)) return value;
   const windows1252 = new Map([[0x20AC, 0x80], [0x201A, 0x82], [0x0192, 0x83], [0x201E, 0x84], [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02C6, 0x88], [0x2030, 0x89], [0x0160, 0x8A], [0x2039, 0x8B], [0x0152, 0x8C], [0x017D, 0x8E], [0x2018, 0x91], [0x2019, 0x92], [0x201C, 0x93], [0x201D, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97], [0x02DC, 0x98], [0x2122, 0x99], [0x0161, 0x9A], [0x203A, 0x9B], [0x0153, 0x9C], [0x017E, 0x9E], [0x0178, 0x9F]]);
@@ -60,7 +66,7 @@ function normalizeFileDb(data) {
   repairLegacyExtensions(data);
   repairLegacyDemandPriorities(data);
   for (const key of [...Object.keys(resourceDefinitions), 'users', 'messages', 'auditLogs', 'announcements']) data[key] ||= [];
-  for (const user of data.users) { if (user.mustChangePassword === undefined) user.mustChangePassword = verifyPassword('123456', user); if (user.active === undefined) user.active = true; user.activationStatus ||= user.active === false ? 'desativado' : 'ativo'; }
+  for (const user of data.users) { if (user.mustChangePassword === undefined) user.mustChangePassword = true; if (user.active === undefined) user.active = true; user.activationStatus ||= user.active === false ? 'desativado' : 'ativo'; }
   data.demandStatuses ||= ['Aberta', 'Em andamento', 'Concluída'];
   for (const demand of data.demandas) if (!data.demandStatuses.includes(demand.status)) data.demandStatuses.push(demand.status);
   for (const [index, demand] of data.demandas.entries()) { demand.tipo ||= 'interna'; demand.ticket ||= `TI-${String(index + 1).padStart(4, '0')}`; demand.interacoes ||= []; }
@@ -433,6 +439,11 @@ async function notifyTicketLifecycle(previous, record, actorId) {
 }
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
 function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
+function secureRequest(req) {
+  if (req.socket.encrypted) return true;
+  if (!config.TRUST_PROXY) return false;
+  return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
+}
 function microSipStatus() {
   const candidates = [
     process.env.MICROSIP_PATH,
@@ -632,6 +643,20 @@ async function api(req, res, url) {
   }
   return error(res, 404, 'Rota não encontrada.');
 }
-const server = http.createServer(async (req, res) => { const url = new URL(req.url, `http://${req.headers.host}`); try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { if (exception.statusCode) return error(res, exception.statusCode, exception.message); console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); } });
-async function start() { if (pool) await initializePostgres(); server.listen(PORT, HOST, () => { console.log(`Central TI disponível em http://localhost:${PORT}`); for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`); console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`); }); }
+const server = http.createServer(async (req, res) => {
+  if (config.REQUIRE_HTTPS && !secureRequest(req)) return error(res, 426, 'Acesso seguro obrigatório. Use HTTPS pelo endereço publicado da Central TI.');
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveFile(req, res, url); } catch (exception) { if (exception.statusCode) return error(res, exception.statusCode, exception.message); console.error(exception); error(res, 500, 'Não foi possível concluir esta operação.'); }
+});
+async function start() {
+  if (pool) await initializePostgres();
+  else readFileDb();
+  server.listen(PORT, HOST, () => {
+    const protocol = config.REQUIRE_HTTPS ? 'HTTPS via reverse proxy' : 'http';
+    console.log(`Central TI disponível em ${protocol} na porta ${PORT}.`);
+    if (!config.REQUIRE_HTTPS) for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`);
+    if (config.REQUIRE_HTTPS && !config.TRUST_PROXY) console.warn('CENTRAL_TI_REQUIRE_HTTPS está ativo. Configure um reverse proxy HTTPS e CENTRAL_TI_TRUST_PROXY=true para atender as requisições encaminhadas.');
+    console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`);
+  });
+}
 start().catch(error => { const migrationHint = DATABASE_URL && !POSTGRES_MIGRATIONS_ENABLED ? ' O banco não foi alterado. Se ele ainda não tiver a estrutura esperada, execute a migração de forma planejada com CENTRAL_TI_RUN_MIGRATIONS=true.' : ''; console.error(`Não foi possível iniciar a Central TI: ${error.message || error}.${migrationHint}`); process.exit(1); });
