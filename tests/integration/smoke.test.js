@@ -189,6 +189,13 @@ test('payloads XSS armazenados permanecem valores de atributo, não handlers exe
   assert.match(source, /data-drop-status="\$\{esc\(status\)\}"/);
 });
 
+test('rascunho de nova demanda mantém a descrição editável', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /const existingDemand = Boolean\(record\?\.id\);/);
+  assert.match(source, /key === 'descricao' && existingDemand \? 'readonly aria-readonly="true"' : ''/);
+  assert.doesNotMatch(source, /key === 'descricao' && record \? 'readonly aria-readonly="true"' : ''/);
+});
+
 test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
   const invalid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
