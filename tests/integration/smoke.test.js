@@ -51,6 +51,8 @@ before(async () => {
       CENTRAL_TI_DATA_DIR: path.join(temporaryRoot, 'storage'),
       BACKUP_DIR: path.join(temporaryRoot, 'backups'),
       CENTRAL_TI_DATA_ENCRYPTION_KEY: 'q1qY1Z7Yo0DZ5Nxcjr9m9P4hZ4KaGPIqdveMyoeujh0=',
+      CENTRAL_TI_ATTACHMENT_MAX_COUNT: '1',
+      CENTRAL_TI_ATTACHMENT_MAX_STORAGE_BYTES: '5000000',
       DATABASE_URL: '',
       EMAIL_2FA_REQUIRED: 'false',
       CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: bootstrapName,
@@ -436,6 +438,52 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const threadedMessages = await request('/api/messages', adminToken);
   const thread = (await threadedMessages.json()).messages.filter(message => message.threadId === firstMessageData.threadId);
   assert.equal(thread.length, 2);
+
+  const screenshot = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  const messageWithAttachment = await request('/api/messages', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ recipientId: userA.id, subject: 'Print de teste', body: 'Confira o print.', attachment: { mime: 'image/png', data: screenshot } })
+  });
+  assert.equal(messageWithAttachment.status, 201);
+  const attachmentMessage = (await messageWithAttachment.json()).message;
+  const messagesWithMetadata = await request('/api/messages', tokenA);
+  const listedAttachment = (await messagesWithMetadata.json()).messages.find(message => message.id === attachmentMessage.id);
+  assert.equal(listedAttachment.hasAttachment, true);
+  assert.equal('attachmentData' in listedAttachment, false);
+  const attachmentDownload = await request(`/api/messages/${attachmentMessage.id}/attachment`, tokenA);
+  assert.equal(attachmentDownload.status, 200);
+  assert.deepEqual(Buffer.from(await attachmentDownload.arrayBuffer()), Buffer.from(screenshot, 'base64'));
+  const forbiddenAttachment = await request(`/api/messages/${attachmentMessage.id}/attachment`, tokenB);
+  assert.equal(forbiddenAttachment.status, 404);
+  const quotaExceeded = await request('/api/messages', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ recipientId: userA.id, subject: 'Outro print', body: 'Este envio deve respeitar a cota.', attachment: { mime: 'image/png', data: screenshot } })
+  });
+  assert.equal(quotaExceeded.status, 429);
+  const invalidAttachment = await request('/api/messages', tokenB, {
+    method: 'POST',
+    body: JSON.stringify({ recipientId: userA.id, subject: 'Print inválido', body: 'Este envio deve ser recusado.', attachment: { mime: 'image/png', data: Buffer.from('não é um PNG').toString('base64') } })
+  });
+  assert.equal(invalidAttachment.status, 422);
+
+  const demandWithAttachment = await request('/api/resources/demandas', tokenA, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Demanda com print', tipo: 'externa', categoria: 'Software', assunto: 'RealClinic — Login / Acesso', prioridade: 'Alta', descricao: 'Print anexado para análise.', anexoPrint: { mime: 'image/png', data: screenshot } })
+  });
+  assert.equal(demandWithAttachment.status, 201);
+  const attachmentDemand = (await demandWithAttachment.json()).record;
+  const demandListWithAttachment = await request('/api/resources/demandas', tokenA);
+  const listedDemandAttachment = (await demandListWithAttachment.json()).records.find(record => record.id === attachmentDemand.id);
+  assert.equal(listedDemandAttachment.anexoPrint.hasAttachment, true);
+  assert.equal('data' in listedDemandAttachment.anexoPrint, false);
+  const demandDetailsWithAttachment = await request(`/api/resources/demandas/${attachmentDemand.id}`, tokenA);
+  assert.equal(demandDetailsWithAttachment.status, 200);
+  assert.equal((await demandDetailsWithAttachment.json()).records[0].anexoPrint.data, screenshot);
+  const forbiddenDemandAttachment = await request(`/api/resources/demandas/${attachmentDemand.id}`, tokenB);
+  assert.equal(forbiddenDemandAttachment.status, 404);
+  const attachmentAudit = await request(`/api/audit?resource=demandas&recordId=${attachmentDemand.id}`, adminToken);
+  assert.equal(attachmentAudit.status, 200);
+  assert.equal(JSON.stringify(await attachmentAudit.json()).includes(screenshot), false);
 
   const [listA, listB, listAdmin] = await Promise.all([
     request('/api/resources/demandas', tokenA),
