@@ -205,6 +205,15 @@ test('quadro de demandas oferece filtro por responsável e minhas demandas', () 
   assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
 });
 
+test('catálogo de demandas cobre os motivos recorrentes revisados em produção', () => {
+  const configSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/core/config.js'), 'utf8');
+  const appSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  for (const reason of ['RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'Ligação com falha', 'Novo ramal', 'Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede']) assert.match(configSource, new RegExp(reason));
+  assert.match(configSource, /'Rede e Internet'/);
+  assert.match(appSource, /function canonicalDemandCategory\(category\)/);
+  assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
+});
+
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /source === 'RAMAL_SECTOR'/);
