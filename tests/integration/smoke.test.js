@@ -214,6 +214,29 @@ test('catálogo de demandas cobre os motivos recorrentes revisados em produção
   assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
 
+test('relatório de demandas inclui o modelo institucional de impressão', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /print-document-header/);
+  assert.match(source, /Relatório de Demandas/);
+  assert.match(source, /print-document-footer/);
+  assert.match(source, /function printDemandReport\(\)/);
+  assert.match(source, /window\.open\('', '_blank'\)/);
+  assert.match(source, /@page\{size:A4 landscape/);
+  assert.match(source, /Emitido por:/);
+  assert.match(source, /Categoria/);
+  assert.match(source, /thead\{display:table-header-group\}/);
+});
+
+test('tela de relatório de demandas possui consulta explícita, colunas e paginação', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /Filtros da consulta/);
+  assert.match(source, /Atualizar relatório/);
+  assert.match(source, /clearDemandReportFilters/);
+  assert.match(source, /Colunas exibidas/);
+  assert.match(source, /report-pagination/);
+  assert.match(source, /pageSize = 25/);
+});
+
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /source === 'RAMAL_SECTOR'/);
@@ -338,6 +361,17 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const customStatusTotals = (await customStatusReport.json()).demandStatus;
   assert.equal(customStatusTotals.find(item => item.status === 'Concluida').total, 1);
   assert.equal(customStatusTotals.find(item => item.status === 'Tdsa Concluídas').total, 1);
+  const analytics = await request('/api/reports?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
+  assert.equal(analytics.status, 200);
+  const analyticsData = await analytics.json();
+  assert.equal(analyticsData.demandReport.metrics.total, 2);
+  assert.equal(analyticsData.demandReport.metrics.completed, 2);
+  assert.equal(analyticsData.demandReport.reasons[0].label, 'Teste de métrica');
+  assert.equal(analyticsData.demandReport.mainReasons[0].percentOfRequester, 100);
+  assert.equal(analyticsData.demandReport.professionals[0].professional, 'Não atribuída');
+  const analyticsExport = await request('/api/reports/export?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
+  assert.equal(analyticsExport.status, 200);
+  assert.match(await analyticsExport.text(), /Principal motivo por solicitante/);
   const dashboard = await request('/api/dashboard', adminToken);
   const dashboardData = await dashboard.json();
   const expectedAssets = await Promise.all(['computadores', 'equipamentos', 'patrimonio'].map(async resource => {
