@@ -209,7 +209,7 @@ test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /source === 'RAMAL_SECTOR'/);
   assert.match(source, /list="ramal-sector-options"/);
-  assert.match(source, /cadastre uma nova categoria \/ setor/);
+  assert.match(source, /placeholder="Selecione ou digite o setor"/);
 });
 
 test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
