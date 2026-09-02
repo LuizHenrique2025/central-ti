@@ -212,6 +212,13 @@ test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
   assert.match(source, /placeholder="Selecione ou digite o setor"/);
 });
 
+test('cadastro de ramal não exige responsável', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /optionalRamalResponsible = state\.modal\?\.resource === 'ramais'/);
+  assert.match(source, /optionalRamalResponsible \? '' : 'required'/);
+  assert.match(source, /Não informado/);
+});
+
 test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
   const invalid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
@@ -293,6 +300,12 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(extension.status, 201);
   const listedExtensions = await request('/api/resources/ramais', adminToken);
   assert.equal((await listedExtensions.json()).records.some(record => record.ramal === '999' && record.setor === 'Central de Relacionamento'), true);
+  const unassignedExtension = await request('/api/resources/ramais', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ ramal: '998', setor: 'Central de Relacionamento', status: 'Ativo', funcionamento: 'Bom funcionamento' })
+  });
+  assert.equal(unassignedExtension.status, 201);
+  assert.equal((await unassignedExtension.json()).record.responsavel, 'Não informado');
 
   const report = await request('/api/reports', adminToken);
   assert.equal(report.status, 200);
