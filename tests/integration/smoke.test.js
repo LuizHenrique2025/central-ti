@@ -205,6 +205,13 @@ test('quadro de demandas oferece filtro por responsável e minhas demandas', () 
   assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
 });
 
+test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /source === 'RAMAL_SECTOR'/);
+  assert.match(source, /list="ramal-sector-options"/);
+  assert.match(source, /cadastre uma nova categoria \/ setor/);
+});
+
 test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
   const invalid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
@@ -263,6 +270,14 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
 
   const materials = await request('/api/resources/materiais', adminToken);
   assert.equal(materials.status, 404);
+
+  const extension = await request('/api/resources/ramais', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ ramal: '999', setor: 'Central de Relacionamento', responsavel: bootstrapName, status: 'Ativo', funcionamento: 'Bom funcionamento' })
+  });
+  assert.equal(extension.status, 201);
+  const listedExtensions = await request('/api/resources/ramais', adminToken);
+  assert.equal((await listedExtensions.json()).records.some(record => record.ramal === '999' && record.setor === 'Central de Relacionamento'), true);
 
   const report = await request('/api/reports', adminToken);
   assert.equal(report.status, 200);
