@@ -338,6 +338,17 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const customStatusTotals = (await customStatusReport.json()).demandStatus;
   assert.equal(customStatusTotals.find(item => item.status === 'Concluida').total, 1);
   assert.equal(customStatusTotals.find(item => item.status === 'Tdsa Concluídas').total, 1);
+  const analytics = await request('/api/reports?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
+  assert.equal(analytics.status, 200);
+  const analyticsData = await analytics.json();
+  assert.equal(analyticsData.demandReport.metrics.total, 2);
+  assert.equal(analyticsData.demandReport.metrics.completed, 2);
+  assert.equal(analyticsData.demandReport.reasons[0].label, 'Teste de métrica');
+  assert.equal(analyticsData.demandReport.mainReasons[0].percentOfRequester, 100);
+  assert.equal(analyticsData.demandReport.professionals[0].professional, 'Não atribuída');
+  const analyticsExport = await request('/api/reports/export?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
+  assert.equal(analyticsExport.status, 200);
+  assert.match(await analyticsExport.text(), /Principal motivo por solicitante/);
   const dashboard = await request('/api/dashboard', adminToken);
   const dashboardData = await dashboard.json();
   const expectedAssets = await Promise.all(['computadores', 'equipamentos', 'patrimonio'].map(async resource => {
