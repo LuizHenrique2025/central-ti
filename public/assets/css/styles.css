@@ -1743,6 +1743,7 @@ body:not(.light-theme) .demand-detail-heading span {
   color:var(--ink);
   background:#171a1f;
 }
+.demand-report-filters{grid-template-columns:repeat(3,minmax(170px,1fr))}.demand-report-filters select{min-height:88px}.demand-report-table{margin-top:18px}
 .exclusion-chart {
   margin:18px 0;
 }
