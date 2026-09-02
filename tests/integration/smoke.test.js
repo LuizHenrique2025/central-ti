@@ -219,6 +219,9 @@ test('relatório de demandas inclui o modelo institucional de impressão', () =>
   assert.match(source, /print-document-header/);
   assert.match(source, /Relatório de Demandas/);
   assert.match(source, /print-document-footer/);
+  assert.match(source, /function printDemandReport\(\)/);
+  assert.match(source, /window\.open\('', '_blank'\)/);
+  assert.match(source, /@page\{size:A4 landscape/);
 });
 
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
