@@ -235,6 +235,14 @@ test('tela de relatório de demandas possui consulta explícita, colunas e pagin
   assert.match(source, /Colunas exibidas/);
   assert.match(source, /report-pagination/);
   assert.match(source, /pageSize = 25/);
+  assert.match(source, /state\.demandReportSection/);
+  assert.match(source, /function setDemandReportSection/);
+  assert.match(source, /demand-analysis-tabs/);
+  assert.match(source, /Distribuição por profissional/);
+  assert.match(source, /Principal motivo por solicitante/);
+  assert.match(source, /Motivos mais frequentes/);
+  assert.match(source, /Demandas abertas por data/);
+  assert.match(source, /Demandas detalhadas/);
 });
 
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
