@@ -5,10 +5,11 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const net = require('node:net');
 const { Pool } = require('pg');
+const QRCode = require('qrcode');
 const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
 const config = require('./core/config');
 const { passwordHash, verifyPassword, validPassword, normalizeCpf, cpfHash, firstName } = require('./core/security');
-const { respond, error, requestBody } = require('./core/http');
+const { SECURITY_HEADERS, respond, error, requestBody } = require('./core/http');
 const { createStaticFileHandler } = require('./core/static-files');
 const { createEncryptedStore } = require('./core/encrypted-store');
 const { createEmailService } = require('./services/email-service');
@@ -28,6 +29,8 @@ const encryptedStore = createEncryptedStore(config.DATA_ENCRYPTION_KEY);
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
+function escapeWifiQrValue(value) { return String(value ?? '').replace(/([\\;,:\"])/g, '\\$1'); }
+function wifiQrPayload(network) { return `WIFI:T:WPA;S:${escapeWifiQrValue(network.nome)};P:${escapeWifiQrValue(network.senha)};;`; }
 function collaboratorPermissions() { return { demandas: { list: true, create: true, update: false, consult: true, delete: false, scope: 'hospital' }, redes: { list: true, create: false, update: false, consult: true, delete: false }, ramais: { list: true, create: false, update: false, consult: true, delete: false } }; }
 function hospitalOnly(user) { return user.perfil !== 'admin' && Boolean(user.permissions?.demandas); }
 function canViewAllDemands(user) { return user.perfil === 'admin' || user.perfil === 'ti'; }
@@ -513,6 +516,15 @@ async function api(req, res, url) {
   const activationMatch = pathname.match(/^\/api\/users\/([\w-]+)\/active$/); if (req.method === 'PUT' && activationMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { active } = await requestBody(req); if (typeof active !== 'boolean') return error(res, 422, 'Informe o estado do usuário.'); if (activationMatch[1] === user.id && !active) return error(res, 422, 'Você não pode desativar seu próprio usuário.'); const updated = await store.setUserActive(activationMatch[1], active); if (!updated) return error(res, 404, 'Usuário não encontrado.'); if (!active) for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, active ? 'ativou usuário' : 'desativou usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); if (passwordMatch[1] === user.id) return error(res, 422, 'Use a alteração de senha do seu próprio perfil.'); const { password } = await requestBody(req); if (!validPassword(password)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password, true); if (!updated) return error(res, 404, 'Usuário não encontrado.'); for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome, trocaObrigatoria: true }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
+  const networkQrMatch = pathname.match(/^\/api\/resources\/redes\/([\w-]+)\/qrcode$/);
+  if (req.method === 'GET' && networkQrMatch) {
+    if (!canAccess(user, 'redes', 'consult')) return error(res, 403, 'Você não tem permissão para consultar redes.');
+    const network = await store.record('redes', networkQrMatch[1]);
+    if (!network) return error(res, 404, 'Rede não encontrada.');
+    const svg = await QRCode.toString(wifiQrPayload(network), { type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#111827', light: '#ffffff' } });
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'private, no-store' });
+    return res.end(svg);
+  }
   const historyMatch = pathname.match(/^\/api\/resources\/([a-z]+)\/([\w-]+)\/history$/); if (req.method === 'GET' && historyMatch) { const [, resource, recordId] = historyMatch; if (!resourceDefinitions[resource] || !canAccess(user, resource)) return error(res, 403, 'Você não tem permissão para este histórico.'); if (resource === 'demandas') { const demand = await store.record(resource, recordId); if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Demanda não encontrada.'); } return respond(res, 200, { logs: await store.audits(resource, recordId) }); }
   if (req.method === 'GET' && pathname === '/api/locations/computadores') { if (!canAccess(user, 'equipamentos')) return error(res, 403, 'Você não tem permissão para equipamentos.'); const records = await store.records('equipamentos'); const groups = [...new Set(records.map(record => record.categoriaEquipamento || 'Equipamento'))]; return respond(res, 200, { groups: groups.map(group => ({ group, total: records.filter(record => (record.categoriaEquipamento || 'Equipamento') === group).length })), records: records.map(record => ({ ...record, grupo: record.categoriaEquipamento || 'Equipamento', status: record.condicao })) }); }
   if (req.method === 'GET' && pathname === '/api/demand-statuses') { if (!canAccess(user, 'demandas')) return error(res, 403, 'Você não tem permissão para demandas.'); return respond(res, 200, { statuses: await store.demandStatuses() }); }

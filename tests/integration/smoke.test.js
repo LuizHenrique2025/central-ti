@@ -264,6 +264,21 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const materials = await request('/api/resources/materiais', adminToken);
   assert.equal(materials.status, 404);
 
+  const network = await request('/api/resources/redes', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ nome: 'Wi-Fi Teste; Norte', senha: 'Senha,Teste:2026', localizacao: 'Recepção', status: 'Ativa' })
+  });
+  assert.equal(network.status, 201);
+  const networkRecord = (await network.json()).record;
+  const networkQr = await request(`/api/resources/redes/${networkRecord.id}/qrcode`, adminToken);
+  assert.equal(networkQr.status, 200);
+  assert.match(networkQr.headers.get('content-type'), /image\/svg\+xml/);
+  assert.equal(networkQr.headers.get('cache-control'), 'private, no-store');
+  const networkQrSvg = await networkQr.text();
+  assert.match(networkQrSvg, /<svg/);
+  assert.equal(networkQrSvg.includes(networkRecord.nome), false);
+  assert.equal(networkQrSvg.includes(networkRecord.senha), false);
+
   const report = await request('/api/reports', adminToken);
   assert.equal(report.status, 200);
   assert.equal((await report.json()).modules.some(module => module.resource === 'materiais'), false);
@@ -386,6 +401,8 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
 
   const forbiddenReset = await request(`/api/users/${userA.id}/password`, tokenB, { method: 'PUT', body: JSON.stringify({ password: 'NaoPode2026!' }) });
   assert.equal(forbiddenReset.status, 403);
+  const forbiddenNetworkQr = await request(`/api/resources/redes/${networkRecord.id}/qrcode`, tokenA);
+  assert.equal(forbiddenNetworkQr.status, 403);
 
   const createdDemand = await request('/api/resources/demandas', tokenA, {
     method: 'POST',
