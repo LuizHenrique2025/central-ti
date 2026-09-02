@@ -222,6 +222,19 @@ test('relatório de demandas inclui o modelo institucional de impressão', () =>
   assert.match(source, /function printDemandReport\(\)/);
   assert.match(source, /window\.open\('', '_blank'\)/);
   assert.match(source, /@page\{size:A4 landscape/);
+  assert.match(source, /Emitido por:/);
+  assert.match(source, /Categoria/);
+  assert.match(source, /thead\{display:table-header-group\}/);
+});
+
+test('tela de relatório de demandas possui consulta explícita, colunas e paginação', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /Filtros da consulta/);
+  assert.match(source, /Atualizar relatório/);
+  assert.match(source, /clearDemandReportFilters/);
+  assert.match(source, /Colunas exibidas/);
+  assert.match(source, /report-pagination/);
+  assert.match(source, /pageSize = 25/);
 });
 
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
