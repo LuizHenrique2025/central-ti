@@ -196,6 +196,15 @@ test('rascunho de nova demanda mantém a descrição editável', () => {
   assert.doesNotMatch(source, /key === 'descricao' && record \? 'readonly aria-readonly="true"' : ''/);
 });
 
+test('quadro de demandas oferece filtro por responsável e minhas demandas', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /function matchesDemandAssignee\(record\)/);
+  assert.match(source, /Minhas demandas/);
+  assert.match(source, /Todos os responsáveis/);
+  assert.match(source, /data-action="demand-assignee-filter"/);
+  assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
+});
+
 test('rejeita senha inválida e aceita o administrador criado por bootstrap seguro', async () => {
   const invalid = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
