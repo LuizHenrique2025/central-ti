@@ -214,6 +214,13 @@ test('catálogo de demandas cobre os motivos recorrentes revisados em produção
   assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
 
+test('relatório de demandas inclui o modelo institucional de impressão', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  assert.match(source, /print-document-header/);
+  assert.match(source, /Relatório de Demandas/);
+  assert.match(source, /print-document-footer/);
+});
+
 test('cadastro de ramal permite informar uma nova categoria ou setor', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /source === 'RAMAL_SECTOR'/);
