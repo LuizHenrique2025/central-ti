@@ -13,10 +13,11 @@ const modules = {
 };
 
 const DEMAND_CATEGORIES = {
-  Software: ['RealClinic — Login / Acesso', 'RealClinic — Exclusão de pagamento particular', 'RealClinic — Exclusão de fatura', 'RealClinic — Exclusão de atendimento', 'RealClinic — Alterar convênio', 'RealClinic — Incluir procedimento', 'RealClinic — Atualizar valor de procedimento', 'RealClinic — Atualizar taxa', 'RealClinic — Incluir profissional', 'RealClinic — Abrir chamado TDSA', 'RealClinic — Relatório', 'RealClinic — Movimentação de estoque', 'RealClinic — Atualizar tabela', 'IPTell — Bot', 'IPTell — Login / Acesso', 'Site do hospital'],
+  Software: ['RealClinic — Login / Acesso', 'RealClinic — Exclusão de pagamento particular', 'RealClinic — Exclusão de fatura', 'RealClinic — Exclusão de atendimento', 'RealClinic — Alterar convênio', 'RealClinic — Incluir procedimento', 'RealClinic — Atualizar valor de procedimento', 'RealClinic — Atualizar taxa', 'RealClinic — Incluir profissional', 'RealClinic — Abrir chamado TDSA', 'RealClinic — Relatório', 'RealClinic — Movimentação de estoque', 'RealClinic — Atualizar tabela', 'RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'IPTell — Bot', 'IPTell — Login / Acesso', 'Site do hospital'],
   Hardware: ['Computador', 'Fone', 'Impressora', 'Tomografia', 'Raio X', 'Etiquetadora', 'Scanner'],
   'Impressão': ['Toner', 'Etiqueta'],
-  Telefonia: ['Telefones', 'Ramais', 'MicroSIP'],
+  Telefonia: ['Telefones', 'Ramais', 'MicroSIP', 'Ligação com falha', 'Novo ramal'],
+  'Rede e Internet': ['Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede'],
   Outros: []
 };
 
