@@ -416,6 +416,17 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const assignedRecord = (await assigned.json()).record;
   assert.equal(assignedRecord.tecnicoResponsavel, bootstrapName);
   assert.equal(assignedRecord.status, 'Em andamento');
+  const invalidStatus = await request(`/api/resources/demandas/${demand.id}/status`, adminToken, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'Status inexistente' })
+  });
+  assert.equal(invalidStatus.status, 422);
+  const completedDemand = await request(`/api/resources/demandas/${demand.id}/status`, adminToken, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'Concluída' })
+  });
+  assert.equal(completedDemand.status, 200);
+  assert.equal((await completedDemand.json()).record.status, 'Concluída');
 
   const adminComment = await request(`/api/resources/demandas/${demand.id}/comments`, adminToken, {
     method: 'POST',
@@ -486,6 +497,17 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const demandDetailsWithAttachment = await request(`/api/resources/demandas/${attachmentDemand.id}`, tokenA);
   assert.equal(demandDetailsWithAttachment.status, 200);
   assert.equal((await demandDetailsWithAttachment.json()).records[0].anexoPrint.data, screenshot);
+  const assignedAttachmentDemand = await request(`/api/resources/demandas/${attachmentDemand.id}/assign-self`, adminToken, {
+    method: 'PUT',
+    body: '{}'
+  });
+  assert.equal(assignedAttachmentDemand.status, 200);
+  const completedAttachmentDemand = await request(`/api/resources/demandas/${attachmentDemand.id}/status`, adminToken, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'Concluída' })
+  });
+  assert.equal(completedAttachmentDemand.status, 200);
+  assert.equal((await completedAttachmentDemand.json()).record.status, 'Concluída');
   const forbiddenDemandAttachment = await request(`/api/resources/demandas/${attachmentDemand.id}`, tokenB);
   assert.equal(forbiddenDemandAttachment.status, 404);
   const attachmentAudit = await request(`/api/audit?resource=demandas&recordId=${attachmentDemand.id}`, adminToken);

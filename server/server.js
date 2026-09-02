@@ -604,6 +604,28 @@ async function api(req, res, url) {
     await log(user.id, 'respondeu ao chamado', 'demandas', demand.id, { interactionId: interaction.id });
     return respond(res, 201, { interaction: { ...interaction, autorNome: user.nome } });
   }
+  const demandStatusMatch = pathname.match(/^\/api\/resources\/demandas\/([\w-]+)\/status$/);
+  if (req.method === 'PUT' && demandStatusMatch) {
+    if (!canAccess(user, 'demandas', 'update')) return error(res, 403, 'Você não tem permissão para atualizar chamados.');
+    const demand = await store.record('demandas', demandStatusMatch[1]);
+    if (!demand || !demandBelongsToUser(demand, user)) return error(res, 404, 'Demanda não encontrada.');
+    if (!demand.tecnicoResponsavel) return error(res, 422, 'Abra os detalhes e assuma o chamado antes de alterar o status.');
+    const { status } = await requestBody(req);
+    const nextStatus = repairTextEncoding(String(status || '').trim());
+    if (!(await store.demandStatuses()).includes(nextStatus)) return error(res, 422, 'Selecione um status válido para a demanda.');
+    const next = { ...demand, status: nextStatus };
+    markExclusionMetadata(next, user, now);
+    const fields = { status: nextStatus };
+    for (const key of ['usuarioSolicitante', 'setorSolicitante', 'solicitanteId', 'exclusaoConcluidaPor', 'exclusaoConcluidaEm']) if (next[key] !== demand[key]) fields[key] = next[key];
+    const updated = await store.updateRecord('demandas', demand.id, fields, user.id);
+    const lifecycleNotifications = await notifyTicketLifecycle(demand, updated, user.id);
+    if (Object.keys(lifecycleNotifications).length) {
+      updated.lifecycleNotifications = { ...(demand.lifecycleNotifications || {}), ...lifecycleNotifications };
+      await store.updateRecord('demandas', demand.id, { lifecycleNotifications: updated.lifecycleNotifications }, user.id);
+    }
+    await log(user.id, 'alterou status do chamado', 'demandas', demand.id, { status: nextStatus });
+    return respond(res, 200, { record: updated });
+  }
   const assignDemandMatch = pathname.match(/^\/api\/resources\/demandas\/([\w-]+)\/assign-self$/);
   if (req.method === 'PUT' && assignDemandMatch) {
     if (!canAccess(user, 'demandas', 'update') || !['admin', 'ti'].includes(user.perfil)) return error(res, 403, 'Somente a equipe de T.I. pode assumir chamados.');
