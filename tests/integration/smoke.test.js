@@ -236,10 +236,12 @@ test('tela de relatório de demandas possui consulta explícita, colunas e pagin
   assert.match(source, /report-pagination/);
   assert.match(source, /pageSize = 25/);
   assert.match(source, /function demandReportFold/);
-  assert.match(source, /demandReportFold\('Principal motivo por solicitante'/);
-  assert.match(source, /demandReportFold\('Motivos mais frequentes'/);
-  assert.match(source, /demandReportFold\('Demandas abertas por data'/);
-  assert.match(source, /demandReportFold\('Demandas detalhadas'/);
+  assert.match(source, /state\.demandReportExpanded/);
+  assert.match(source, /setDemandReportExpanded/);
+  assert.match(source, /demandReportFold\('mainReasons', 'Principal motivo por solicitante'/);
+  assert.match(source, /demandReportFold\('reasons', 'Motivos mais frequentes'/);
+  assert.match(source, /demandReportFold\('dates', 'Demandas abertas por data'/);
+  assert.match(source, /demandReportFold\('details', 'Demandas detalhadas'/);
   assert.match(source, /const professionals = demandReportTable\('Distribuição por profissional'/);
 });
 
