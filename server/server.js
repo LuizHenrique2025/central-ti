@@ -247,13 +247,14 @@ async function initializePostgres() {
 function normalizePermissions(rawPermissions) { const permissions = {}; for (const resource of Object.keys(resourceDefinitions)) { const requested = rawPermissions?.[resource]; if (!requested || typeof requested !== 'object') continue; const legacyRead = requested.read !== false; permissions[resource] = { list: requested.list ?? legacyRead, consult: requested.consult ?? legacyRead, create: requested.create ?? requested.write ?? false, update: requested.update ?? requested.write ?? false, delete: Boolean(requested.delete) }; } return permissions; }
 function canAccess(user, resource, mode = 'list') { if (DISABLED_RESOURCES.has(resource)) return false; if (user.perfil === 'admin') return true; const permission = user.permissions?.[resource]; if (permission) { const legacyRead = permission.read !== false; const map = { list: permission.list ?? legacyRead, consult: permission.consult ?? legacyRead, create: permission.create ?? permission.write ?? false, update: permission.update ?? permission.write ?? false, delete: Boolean(permission.delete) }; return Boolean(map[mode]); } if (user.permissions && Object.keys(user.permissions).length) return false; if ((mode === 'list' || mode === 'consult') && user.perfil === 'consulta') return true; return access[user.perfil]?.includes(resource) || false; }
 function sanitize(values, keys) {
+  const resource = Object.entries(resourceDefinitions).find(([, fields]) => fields === keys)?.[0];
   const item = {};
   for (const key of keys) {
     const value = typeof values[key] === 'string' || typeof values[key] === 'number' ? repairTextEncoding(String(values[key]).trim()) : '';
-    if (!value || value.length > 250) return null;
-    item[key] = value;
+    const optionalRamalResponsible = resource === 'ramais' && key === 'responsavel';
+    if ((!value && !optionalRamalResponsible) || value.length > 250) return null;
+    item[key] = value || (optionalRamalResponsible ? 'Não informado' : value);
   }
-  const resource = Object.entries(resourceDefinitions).find(([, fields]) => fields === keys)?.[0];
   for (const key of optionalResourceFields[resource] || []) {
     const value = repairTextEncoding(String(values[key] || '').trim());
     const limit = key === 'descricao' ? 3000 : 250;
