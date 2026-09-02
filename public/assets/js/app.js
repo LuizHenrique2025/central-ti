@@ -81,6 +81,14 @@ document.addEventListener('click', event => {
   }
 });
 
+document.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (state.page !== 'relatorios' || state.reportTab !== 'demands' || !button || !/Gerar PDF/.test(button.textContent || '')) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  printDemandReport();
+}, true);
+
 document.addEventListener('input', event => {
   if (event.target.matches('[data-action="search"]')) setSearch(event.target.value);
 });
@@ -234,6 +242,21 @@ function reportPage() {
   const tabs = [['overview', 'Visão Geral'], ['demands', 'Demandas'], ['exclusions', 'Exclusões'], ['inventory', 'Inventário'], ['audit', 'Auditoria']];
   const content = activeTab === 'exclusions' ? exclusionReportPage(report.exclusions) : activeTab === 'demands' ? demandReportsPage(demand) : activeTab === 'inventory' ? `<div class="report-grid">${reportTable('Inventário por módulo', report.modules.filter(item => ['computadores', 'equipamentos', 'patrimonio', 'ramais', 'redes'].includes(item.resource)).map(item => ({ label: modules[item.resource]?.name || item.resource, total: item.total })))}${reportTable('Alertas técnicos', report.alerts.map(item => ({ label: `${item.item} · ${item.avaliacao}`, total: 1 })))}</div>` : activeTab === 'audit' ? `<section class="panel table-panel"><div class="panel-heading"><h3>Auditoria do período</h3></div>${report.audit?.length ? `<table class="data-table"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th></tr></thead><tbody>${report.audit.map(item => `<tr><td>${item.createdAt ? esc(formatDate(item.createdAt)) : '—'}</td><td>${esc(item.userName || 'Usuário removido')}</td><td>${esc(item.action || '—')}</td><td>${esc(item.resource || 'Sistema')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Sem registros de auditoria no período.</div>'}</section>` : reportOverview(report);
   return `${header('Relatórios', 'Análise e auditoria')}<div class="report-actions"><label>De<input type="date" value="${esc(state.start)}" onchange="setPeriod(this.value,state.end)"/></label><label>Até<input type="date" value="${esc(state.end)}" onchange="setPeriod(state.start,this.value)"/></label><button class="secondary" onclick="exportReport()">⇩ CSV / Excel</button><button class="add-record" onclick="window.print()">🖨 Gerar PDF</button></div><nav class="report-tabs">${tabs.map(([id, label]) => `<button class="${activeTab === id ? 'active' : ''}" onclick="setReportTab('${id}')">${esc(label)}</button>`).join('')}</nav>${content}`;
+}
+function printDemandReport() {
+  const demand = state.report?.demandReport;
+  if (!demand) return toast('Carregue o relatório antes de gerar o PDF.');
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return toast('Permita a abertura da janela de impressão para gerar o PDF.');
+  const period = `${state.start ? formatDate(`${state.start}T12:00:00`) : 'Início'} até ${state.end ? formatDate(`${state.end}T12:00:00`) : 'Hoje'}`;
+  const table = (title, headers, rows) => `<section><h2>${esc(title)}</h2><table><thead><tr>${headers.map(header => `<th>${esc(header)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></section>`;
+  const metrics = [['Total de demandas', demand.metrics.total], ['Concluídas', `${demand.metrics.completed} (${demand.metrics.completedPercent}%)`], ['Em aberto', demand.metrics.open], ['Usuário com mais demandas', demand.metrics.topRequester], ['Motivo mais frequente', demand.metrics.topReason]];
+  const summary = `<section class="metrics">${metrics.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</section>`;
+  const mainReasons = table('Principal motivo por solicitante', ['Solicitante', 'Setor', 'Total', 'Principal motivo', 'Qtd.', '% no usuário', '% geral'], demand.mainReasons.map(item => `<tr><td>${esc(item.requester)}</td><td>${esc(item.sector)}</td><td>${item.total}</td><td>${esc(item.reason)}</td><td>${item.quantity}</td><td>${item.percentOfRequester}%</td><td>${item.percentOfTotal}%</td></tr>`));
+  const professionals = table('Distribuição por profissional', ['Profissional', 'Assumidas', 'Concluídas', 'Em aberto', '% do total'], demand.professionals.map(item => `<tr><td>${esc(item.professional)}</td><td>${item.assumed}</td><td>${item.completed}</td><td>${item.open}</td><td>${item.percentOfTotal}%</td></tr>`));
+  const details = table('Demandas detalhadas', ['Ticket', 'Abertura', 'Solicitante', 'Setor', 'Motivo', 'Responsável', 'Status'], demand.records.map(item => `<tr><td>${esc(item.ticket)}</td><td>${item.createdAt ? esc(formatDate(item.createdAt)) : '—'}</td><td>${esc(item.requester)}</td><td>${esc(item.sector)}</td><td>${esc(item.reason)}</td><td>${esc(item.assignee)}</td><td>${esc(item.status)}</td></tr>`));
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de Demandas — Central TI</title><style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#172234;font:9pt Arial,sans-serif}.header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1c3349;padding-bottom:8mm;margin-bottom:7mm}.brand{font-size:19pt;font-weight:800;color:#14202d}.subtitle{display:block;margin-top:2mm;color:#526274;font-size:10pt}.meta{text-align:right;color:#526274;line-height:1.55}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:3mm;margin-bottom:7mm}.metrics div{border:1px solid #d8e0e7;border-radius:2mm;padding:4mm;background:#f7f9fb}.metrics span{display:block;color:#526274;font-size:8pt}.metrics b{display:block;margin-top:2mm;font-size:12pt}section{margin:0 0 7mm;break-inside:avoid}h2{margin:0 0 3mm;font-size:11pt;color:#14202d}table{width:100%;border-collapse:collapse;font-size:8pt}th{background:#eaf0f5;color:#34485c;text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.2pt}th,td{border:1px solid #d8e0e7;padding:2.4mm;vertical-align:top}tr{break-inside:avoid}thead{display:table-header-group}.footer{margin-top:8mm;padding-top:3mm;border-top:1px solid #d8e0e7;color:#6c7c8d;font-size:7.5pt;text-align:center}</style></head><body><header class="header"><div><div class="brand">Central TI</div><span class="subtitle">Relatório de Demandas</span></div><div class="meta"><b>Período:</b> ${esc(period)}<br><b>Emitido em:</b> ${esc(formatDate(new Date().toISOString()))}</div></header>${summary}${mainReasons}${professionals}${details}<footer class="footer">Central TI · Relatório gerado conforme os filtros aplicados.</footer><script>window.onload=()=>window.print();<\/script></body></html>`);
+  printWindow.document.close();
 }
 function messageThreadId(message) { return message.threadId || message.id; }
 function visibleMessageForMe(message, mine) { return (message.recipient.id === mine && !message.recipientDeletedAt) || (message.sender.id === mine && !message.senderDeletedAt); }
