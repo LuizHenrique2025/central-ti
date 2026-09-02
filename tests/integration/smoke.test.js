@@ -51,7 +51,7 @@ before(async () => {
       CENTRAL_TI_DATA_DIR: path.join(temporaryRoot, 'storage'),
       BACKUP_DIR: path.join(temporaryRoot, 'backups'),
       CENTRAL_TI_DATA_ENCRYPTION_KEY: 'q1qY1Z7Yo0DZ5Nxcjr9m9P4hZ4KaGPIqdveMyoeujh0=',
-      CENTRAL_TI_ATTACHMENT_MAX_COUNT: '1',
+      CENTRAL_TI_ATTACHMENT_MAX_COUNT: '2',
       CENTRAL_TI_ATTACHMENT_MAX_STORAGE_BYTES: '5000000',
       DATABASE_URL: '',
       EMAIL_2FA_REQUIRED: 'false',
@@ -393,12 +393,22 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(createdDemand.status, 201);
   const demand = (await createdDemand.json()).record;
+  const screenshot = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
 
   const commentA = await request(`/api/resources/demandas/${demand.id}/comments`, tokenA, {
     method: 'POST',
-    body: JSON.stringify({ text: 'Preciso de ajuda para recuperar meu acesso.' })
+    body: JSON.stringify({ text: 'Preciso de ajuda para recuperar meu acesso.', anexoPrint: { mime: 'image/png', data: screenshot } })
   });
   assert.equal(commentA.status, 201);
+  assert.equal((await commentA.json()).interaction.anexoPrint.data, screenshot);
+  const demandDetailsWithComment = await request(`/api/resources/demandas/${demand.id}`, tokenA);
+  const commentWithAttachment = (await demandDetailsWithComment.json()).records[0].interacoes[0];
+  assert.equal(commentWithAttachment.anexoPrint.data, screenshot);
+  const invalidCommentAttachment = await request(`/api/resources/demandas/${demand.id}/comments`, tokenA, {
+    method: 'POST',
+    body: JSON.stringify({ anexoPrint: { mime: 'image/png', data: Buffer.from('não é um PNG').toString('base64') } })
+  });
+  assert.equal(invalidCommentAttachment.status, 422);
   const forbiddenComment = await request(`/api/resources/demandas/${demand.id}/comments`, tokenB, {
     method: 'POST',
     body: JSON.stringify({ text: 'Não deveria acessar este chamado.' })
@@ -466,7 +476,6 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const thread = (await threadedMessages.json()).messages.filter(message => message.threadId === firstMessageData.threadId);
   assert.equal(thread.length, 2);
 
-  const screenshot = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
   const messageWithAttachment = await request('/api/messages', adminToken, {
     method: 'POST',
     body: JSON.stringify({ recipientId: userA.id, subject: 'Print de teste', body: 'Confira o print.', attachment: { mime: 'image/png', data: screenshot } })
@@ -482,9 +491,14 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.deepEqual(Buffer.from(await attachmentDownload.arrayBuffer()), Buffer.from(screenshot, 'base64'));
   const forbiddenAttachment = await request(`/api/messages/${attachmentMessage.id}/attachment`, tokenB);
   assert.equal(forbiddenAttachment.status, 404);
-  const quotaExceeded = await request('/api/messages', adminToken, {
+  const secondAttachment = await request('/api/messages', adminToken, {
     method: 'POST',
     body: JSON.stringify({ recipientId: userA.id, subject: 'Outro print', body: 'Este envio deve respeitar a cota.', attachment: { mime: 'image/png', data: screenshot } })
+  });
+  assert.equal(secondAttachment.status, 201);
+  const quotaExceeded = await request('/api/messages', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ recipientId: userA.id, subject: 'Terceiro print', body: 'Este envio deve respeitar a cota.', attachment: { mime: 'image/png', data: screenshot } })
   });
   assert.equal(quotaExceeded.status, 429);
   const invalidAttachment = await request('/api/messages', tokenB, {
@@ -517,6 +531,11 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(completedAttachmentDemand.status, 200);
   assert.equal((await completedAttachmentDemand.json()).record.status, 'Concluída');
+  const commentAttachmentQuotaExceeded = await request(`/api/resources/demandas/${demand.id}/comments`, tokenA, {
+    method: 'POST',
+    body: JSON.stringify({ text: 'Este terceiro print deve respeitar a cota.', anexoPrint: { mime: 'image/png', data: screenshot } })
+  });
+  assert.equal(commentAttachmentQuotaExceeded.status, 429);
   const forbiddenDemandAttachment = await request(`/api/resources/demandas/${attachmentDemand.id}`, tokenB);
   assert.equal(forbiddenDemandAttachment.status, 404);
   const attachmentAudit = await request(`/api/audit?resource=demandas&recordId=${attachmentDemand.id}`, adminToken);
@@ -533,6 +552,9 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const recordsAdmin = (await listAdmin.json()).records;
   assert.equal(recordsA.some(record => record.titulo === 'Demanda confidencial do usuário A'), true);
   assert.equal(recordsA.find(record => record.id === demand.id).interacoes.length, 2);
+  const listedCommentAttachment = recordsA.find(record => record.id === demand.id).interacoes[0].anexoPrint;
+  assert.equal(listedCommentAttachment.hasAttachment, true);
+  assert.equal('data' in listedCommentAttachment, false);
   assert.equal(recordsB.some(record => record.titulo === 'Demanda confidencial do usuário A'), false);
   assert.equal(recordsAdmin.some(record => record.titulo === 'Demanda confidencial do usuário A'), true);
 
