@@ -39,8 +39,8 @@ test('a interface carrega o recurso de anexos separado da aplicação principal'
   const root = path.resolve(__dirname, '..', '..');
   const page = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'app.js'), 'utf8');
-  const feature = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'features', 'attachments.js'), 'utf8');
-  assert.match(page, /assets\/js\/features\/attachments\.js/);
+  const bootstrap = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'core', 'bootstrap.js'), 'utf8');
+  assert.doesNotMatch(page, /assets\/js\/features\/attachments\.js/);
   assert.match(app, /CentralTiAttachments\?\.enhanceCurrentSurface/);
-  assert.match(feature, /function enhanceCurrentSurface/);
+  assert.match(bootstrap, /function enhanceCurrentSurface/);
 });
