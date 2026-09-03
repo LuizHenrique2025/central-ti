@@ -2,14 +2,14 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const os = require('node:os');
 const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
 const config = require('./core/config');
-const { passwordHash, verifyPassword, validPassword, normalizeCpf, cpfHash, firstName } = require('./core/security');
+const { passwordHash, verifyPassword, validPassword, normalizeCpf, cpfHash } = require('./core/security');
 const { SECURITY_HEADERS, respond, error, requestBody } = require('./core/http');
 const { createStaticFileHandler } = require('./core/static-files');
+const { csvDocument } = require('./core/csv');
 const { createEncryptedStore } = require('./core/encrypted-store');
 const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
@@ -27,14 +27,45 @@ const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL,
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
 const firstAccessChallenges = new Map();
+const twoFactorFailures = new Map();
+const MAX_PENDING_CHALLENGES = 1_000;
+const CHALLENGE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_TWO_FACTOR_FAILURES = 5;
 const DISABLED_RESOURCES = new Set(disabledResources);
 const emailService = createEmailService(config);
 const serveFile = createStaticFileHandler(PUBLIC_DIR);
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined }) : null;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: config.DATABASE_SSL ? { rejectUnauthorized: true } : undefined }) : null;
 const encryptedStore = createEncryptedStore(config.DATA_ENCRYPTION_KEY);
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
+function pruneExpiredChallenges(challenges) {
+  const current = Date.now();
+  for (const [token, challenge] of challenges) if (challenge.expiresAt <= current) challenges.delete(token);
+}
+function challengeCapacityAvailable(challenges) {
+  pruneExpiredChallenges(challenges);
+  return challenges.size < MAX_PENDING_CHALLENGES;
+}
+function deleteChallengesForUser(challenges, userId) {
+  for (const [token, challenge] of challenges) if (challenge.userId === userId) challenges.delete(token);
+}
+function deleteVerificationChallenges(userId) {
+  deleteChallengesForUser(verificationChallenges, userId);
+}
+function twoFactorFailureKey(userId, req) { return `${userId}:${req.socket.remoteAddress || 'unknown'}`; }
+function twoFactorLocked(userId, req) {
+  const key = twoFactorFailureKey(userId, req);
+  const attempt = twoFactorFailures.get(key);
+  if (!attempt || Date.now() - attempt.last >= CHALLENGE_FAILURE_WINDOW_MS) { twoFactorFailures.delete(key); return false; }
+  return attempt.count >= MAX_TWO_FACTOR_FAILURES;
+}
+function recordTwoFactorFailure(userId, req) {
+  const key = twoFactorFailureKey(userId, req);
+  const current = twoFactorFailures.get(key);
+  if (!current || Date.now() - current.last >= CHALLENGE_FAILURE_WINDOW_MS) twoFactorFailures.set(key, { count: 1, last: Date.now() });
+  else twoFactorFailures.set(key, { count: current.count + 1, last: Date.now() });
+}
 async function assertAttachmentQuota(userId, attachment, replacedBytes = 0) { const usage = await store.attachmentUsageFor(userId); const nextCount = usage.count + (replacedBytes ? 0 : 1), nextBytes = usage.bytes - replacedBytes + attachmentBytes(attachment); if (nextCount > ATTACHMENT_MAX_COUNT || nextBytes > ATTACHMENT_MAX_STORAGE_BYTES) { const sizeMb = Math.round(ATTACHMENT_MAX_STORAGE_BYTES / 1_000_000); const exception = new Error(`Limite de prints atingido: até ${ATTACHMENT_MAX_COUNT} anexos e ${sizeMb} MB por usuário.`); exception.statusCode = 429; throw exception; } }
 function initialData() {
   const admin = config.BOOTSTRAP_ADMIN;
@@ -340,7 +371,6 @@ async function notifyTicketLifecycle(previous, record, actorId) {
   return changed;
 }
 async function log(userId, action, resource = null, recordId = null, details = {}) { await store.audit({ id: id(), userId, action, resource, recordId, details, createdAt: now() }); }
-function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
 function secureRequest(req) {
   if (req.socket.encrypted) return true;
   if (!config.TRUST_PROXY) return false;
@@ -356,7 +386,7 @@ function microSipStatus() {
   const available = candidates.some(candidate => fs.existsSync(candidate));
   return { available, message: available ? 'MicroSIP disponível para ligação.' : 'MicroSIP não está instalado. Use o telefone fixo para realizar a ligação.' };
 }
-function csv(records, keys) { const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`; return `\uFEFF${keys.join(';')}\n${records.map(row => keys.map(key => quote(row[key])).join(';')).join('\n')}`; }
+function csv(records, keys) { return csvDocument([keys, ...records.map(row => keys.map(key => row[key]))]); }
 async function api(req, res, url) {
   const { pathname } = url;
   if (req.method === 'GET' && pathname === '/api/health') return respond(res, 200, { ok: true });
@@ -368,22 +398,25 @@ async function api(req, res, url) {
     recordAttempt(req, true);
     if (TWO_FACTOR_REQUIRED) {
       if (!emailService.enabled) return error(res, 503, 'A validação por e-mail está ativa, mas o envio SMTP não foi configurado.');
+      if (twoFactorLocked(user.id, req)) return error(res, 429, 'Muitas tentativas de validação. Tente novamente em 15 minutos.');
+      deleteVerificationChallenges(user.id);
+      if (!challengeCapacityAvailable(verificationChallenges)) return error(res, 503, 'Há muitas validações pendentes. Tente novamente em alguns minutos.');
       const verificationToken = crypto.randomBytes(32).toString('hex'); const code = String(crypto.randomInt(100000, 1000000)); verificationChallenges.set(verificationToken, { userId: user.id, codeHash: crypto.createHash('sha256').update(code).digest('hex'), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
       try { await emailService.sendVerificationCode(user, code); } catch (exception) { verificationChallenges.delete(verificationToken); console.error('Erro ao enviar código de verificação:', exception.message); return error(res, 503, 'Não foi possível enviar o código para o e-mail cadastrado.'); }
       return respond(res, 200, { requiresVerification: true, verificationToken, email: user.email.replace(/^(.{1,2}).*(@.*)$/, '$1***$2'), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() });
     }
     const token = createSingleSession(user.id); await log(user.id, 'login'); return respond(res, 200, { token, user: publicUser(user), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
   }
-  if (req.method === 'POST' && pathname === '/api/first-access/identify') { const { nome, cpf } = await requestBody(req); const cleanCpf = normalizeCpf(cpf); const user = cleanCpf && (await store.users()).find(item => item.cpfHash === cpfHash(cleanCpf) && firstName(item.nome) === firstName(nome)); if (!user || user.activationStatus !== 'pre-cadastro') return error(res, 401, 'Não localizamos um pré-cadastro com esses dados.'); const token = crypto.randomBytes(32).toString('hex'); firstAccessChallenges.set(token, { userId: user.id, expiresAt: Date.now() + 15 * 60 * 1000 }); return respond(res, 200, { token, nome: user.nome, setor: user.setor || '' }); }
-  if (req.method === 'POST' && pathname === '/api/first-access/complete') { const { token, dataNascimento, email, login, senha } = await requestBody(req); const challenge = firstAccessChallenges.get(token); if (!challenge || challenge.expiresAt < Date.now()) return error(res, 401, 'Sua validação expirou. Faça o primeiro acesso novamente.'); const user = await store.findUser(challenge.userId); const cleanEmail = String(email || '').trim().toLowerCase(), cleanLogin = String(login || '').trim().toLowerCase(); if (!user || user.activationStatus !== 'pre-cadastro' || !/^\d{4}-\d{2}-\d{2}$/.test(String(dataNascimento || '')) || !/^\S+@\S+\.\S+$/.test(cleanEmail) || !/^[a-z0-9._-]{3,50}$/.test(cleanLogin) || !validPassword(senha)) return error(res, 422, 'Revise os dados. A senha precisa ter 8+ caracteres, maiúscula, minúscula, número e símbolo.'); const duplicate = (await store.users()).find(item => item.id !== user.id && (item.email?.toLowerCase() === cleanEmail || item.login?.toLowerCase() === cleanLogin)); if (duplicate) return error(res, 409, 'Este e-mail ou login já está em uso.'); const credentials = passwordHash(senha); const updated = await store.updateUser(user.id, { dataNascimento, email: cleanEmail, login: cleanLogin, ...credentials, active: false, activationStatus: 'aguardando aprovação', mustChangePassword: false, permissions: collaboratorPermissions() }); firstAccessChallenges.delete(token); await log(updated.id, 'concluiu primeiro acesso', 'users', updated.id, { setor: updated.setor }); return respond(res, 200, { ok: true }); }
+  if (req.method === 'POST' && pathname === '/api/first-access/identify') { const { cpf, dataNascimento } = await requestBody(req); const cleanCpf = normalizeCpf(cpf); const cleanBirthDate = String(dataNascimento || ''); const user = cleanCpf && /^\d{4}-\d{2}-\d{2}$/.test(cleanBirthDate) && (await store.users()).find(item => item.cpfHash === cpfHash(cleanCpf) && item.dataNascimento === cleanBirthDate); if (!user || user.activationStatus !== 'pre-cadastro') return error(res, 401, 'Não localizamos um pré-cadastro com esses dados.'); deleteChallengesForUser(firstAccessChallenges, user.id); if (!challengeCapacityAvailable(firstAccessChallenges)) return error(res, 503, 'Há muitas validações pendentes. Tente novamente em alguns minutos.'); const token = crypto.randomBytes(32).toString('hex'); firstAccessChallenges.set(token, { userId: user.id, expiresAt: Date.now() + 15 * 60 * 1000 }); return respond(res, 200, { token, nome: user.nome, setor: user.setor || '', dataNascimento: cleanBirthDate }); }
+  if (req.method === 'POST' && pathname === '/api/first-access/complete') { const { token, dataNascimento, email, login, senha } = await requestBody(req); const challenge = firstAccessChallenges.get(token); if (!challenge || challenge.expiresAt < Date.now()) { if (token) firstAccessChallenges.delete(token); return error(res, 401, 'Sua validação expirou. Faça o primeiro acesso novamente.'); } const user = await store.findUser(challenge.userId); const cleanEmail = String(email || '').trim().toLowerCase(), cleanLogin = String(login || '').trim().toLowerCase(); if (!user || user.activationStatus !== 'pre-cadastro' || user.dataNascimento !== String(dataNascimento || '') || !/^\d{4}-\d{2}-\d{2}$/.test(String(dataNascimento || '')) || !/^\S+@\S+\.\S+$/.test(cleanEmail) || !/^[a-z0-9._-]{3,50}$/.test(cleanLogin) || !validPassword(senha)) return error(res, 422, 'Revise os dados. A senha precisa ter 8+ caracteres, maiúscula, minúscula, número e símbolo.'); const duplicate = (await store.users()).find(item => item.id !== user.id && (item.email?.toLowerCase() === cleanEmail || item.login?.toLowerCase() === cleanLogin)); if (duplicate) return error(res, 409, 'Este e-mail ou login já está em uso.'); const credentials = passwordHash(senha); const updated = await store.updateUser(user.id, { email: cleanEmail, login: cleanLogin, ...credentials, active: false, activationStatus: 'aguardando aprovação', mustChangePassword: false, permissions: collaboratorPermissions() }); firstAccessChallenges.delete(token); await log(updated.id, 'concluiu primeiro acesso', 'users', updated.id, { setor: updated.setor }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/auth/verify-email') {
     const { verificationToken, code } = await requestBody(req); const challenge = verificationChallenges.get(verificationToken); if (!challenge || challenge.expiresAt < Date.now() || challenge.attempts >= 5) { if (verificationToken) verificationChallenges.delete(verificationToken); return error(res, 401, 'O código expirou. Entre novamente para solicitar outro.'); }
-    const receivedHash = crypto.createHash('sha256').update(String(code || '')).digest('hex'); if (!crypto.timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(challenge.codeHash, 'hex'))) { challenge.attempts += 1; return error(res, 401, 'Código inválido.'); }
-    verificationChallenges.delete(verificationToken); const verifiedUser = await store.findUser(challenge.userId); if (!verifiedUser) return error(res, 401, 'Usuário não encontrado.'); const token = createSingleSession(verifiedUser.id); await log(verifiedUser.id, 'login com validação de e-mail'); return respond(res, 200, { token, user: publicUser(verifiedUser), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+    const receivedHash = crypto.createHash('sha256').update(String(code || '')).digest('hex'); if (!crypto.timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(challenge.codeHash, 'hex'))) { challenge.attempts += 1; recordTwoFactorFailure(challenge.userId, req); if (challenge.attempts >= 5 || twoFactorLocked(challenge.userId, req)) deleteVerificationChallenges(challenge.userId); return error(res, 401, 'Código inválido.'); }
+    verificationChallenges.delete(verificationToken); const verifiedUser = await store.findUser(challenge.userId); if (!verifiedUser || verifiedUser.active === false || verifiedUser.activationStatus === 'pre-cadastro' || verifiedUser.activationStatus === 'aguardando aprovação') return error(res, 401, 'Usuário não está ativo.'); twoFactorFailures.delete(twoFactorFailureKey(verifiedUser.id, req)); const token = createSingleSession(verifiedUser.id); await log(verifiedUser.id, 'login com validação de e-mail'); return respond(res, 200, { token, user: publicUser(verifiedUser), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
   }
   if (req.method === 'POST' && pathname === '/api/auth/logout') { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); if (token) sessions.delete(token); return respond(res, 200, { ok: true }); }
   const user = await requireAuth(req, res); if (!user) return;
-  if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: localAddresses(), database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
+  if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: [], database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
   if (req.method === 'GET' && pathname === '/api/integrations/microsip/status') return respond(res, 200, microSipStatus());
   if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (!validPassword(newPassword)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
   if (user.mustChangePassword) return error(res, 403, 'Altere sua senha antes de acessar o sistema.');
@@ -394,12 +427,12 @@ async function api(req, res, url) {
     if (!nome || nome.length > 120 || !/^\S+@\S+\.\S+$/.test(email) || !['admin', 'ti', 'consulta'].includes(perfil) || !validPassword(senha)) return error(res, 422, 'Revise os dados: senha com 8+ caracteres, maiúscula, minúscula, número e símbolo.'); if (await store.findUserByEmail(email)) return error(res, 409, 'Já existe um usuário com este e-mail.');
     const { salt, hash } = passwordHash(senha); const created = { id: id(), nome, email, perfil, active: true, permissions, salt, hash, mustChangePassword: true, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou usuário', 'users', created.id, { nome, email, perfil, permissions }); return respond(res, 201, { user: publicUser(created) });
   }
-  if (req.method === 'POST' && pathname === '/api/users/pre-cadastro') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem criar pré-cadastros.'); const body = await requestBody(req); const nome = repairTextEncoding(String(body.nome || '').trim()), cpf = normalizeCpf(body.cpf), setor = repairTextEncoding(String(body.setor || '').trim()); if (!nome || nome.length > 120 || !cpf || !setor || setor.length > 120) return error(res, 422, 'Informe nome, CPF e setor corretamente.'); if ((await store.users()).some(item => item.cpfHash === cpfHash(cpf))) return error(res, 409, 'Já existe um cadastro para este CPF.'); const placeholderCredentials = passwordHash(crypto.randomBytes(32).toString('hex')); const created = { id: id(), nome, setor, cpfHash: cpfHash(cpf), cpfLast4: cpf.slice(-4), perfil: 'consulta', active: false, activationStatus: 'pre-cadastro', permissions: collaboratorPermissions(), ...placeholderCredentials, mustChangePassword: false, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou pré-cadastro', 'users', created.id, { nome, setor, cpfLast4: created.cpfLast4 }); return respond(res, 201, { user: publicUser(created) }); }
+  if (req.method === 'POST' && pathname === '/api/users/pre-cadastro') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem criar pré-cadastros.'); const body = await requestBody(req); const nome = repairTextEncoding(String(body.nome || '').trim()), cpf = normalizeCpf(body.cpf), setor = repairTextEncoding(String(body.setor || '').trim()), dataNascimento = String(body.dataNascimento || ''); if (!nome || nome.length > 120 || !cpf || !setor || setor.length > 120 || !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) return error(res, 422, 'Informe nome, CPF, data de nascimento e setor corretamente.'); if ((await store.users()).some(item => item.cpfHash === cpfHash(cpf))) return error(res, 409, 'Já existe um cadastro para este CPF.'); const placeholderCredentials = passwordHash(crypto.randomBytes(32).toString('hex')); const created = { id: id(), nome, setor, dataNascimento, cpfHash: cpfHash(cpf), cpfLast4: cpf.slice(-4), perfil: 'consulta', active: false, activationStatus: 'pre-cadastro', permissions: collaboratorPermissions(), ...placeholderCredentials, mustChangePassword: false, createdAt: now() }; await store.createUser(created); await log(user.id, 'criou pré-cadastro', 'users', created.id, { nome, setor, cpfLast4: created.cpfLast4 }); return respond(res, 201, { user: publicUser(created) }); }
   const approveMatch = pathname.match(/^\/api\/users\/([\w-]+)\/approve$/); if (req.method === 'PUT' && approveMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem ativar cadastros.'); const target = await store.findUser(approveMatch[1]); if (!target || target.activationStatus !== 'aguardando aprovação') return error(res, 422, 'Este cadastro não está aguardando aprovação.'); const updated = await store.updateUser(target.id, { active: true, activationStatus: 'ativo' }); await log(user.id, 'ativou cadastro', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const renameMatch = pathname.match(/^\/api\/users\/([\w-]+)\/name$/); if (req.method === 'PUT' && renameMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { nome } = await requestBody(req); const clean = repairTextEncoding(String(nome || '').trim()); if (!clean || clean.length > 120) return error(res, 422, 'Informe um nome válido.'); const updated = await store.renameUser(renameMatch[1], clean); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'alterou nome de usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
   const permissionsMatch = pathname.match(/^\/api\/users\/([\w-]+)\/permissions$/); if (req.method === 'PUT' && permissionsMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar permissões.'); if (permissionsMatch[1] === user.id) return error(res, 422, 'As permissões do seu próprio administrador não podem ser restringidas.'); const body = await requestBody(req); const updated = await store.setUserPermissions(permissionsMatch[1], normalizePermissions(body.permissions)); if (!updated) return error(res, 404, 'Usuário não encontrado.'); await log(user.id, 'alterou permissões', 'users', updated.id, { nome: updated.nome, permissions: updated.permissions }); return respond(res, 200, { user: publicUser(updated) }); }
-  const activationMatch = pathname.match(/^\/api\/users\/([\w-]+)\/active$/); if (req.method === 'PUT' && activationMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { active } = await requestBody(req); if (typeof active !== 'boolean') return error(res, 422, 'Informe o estado do usuário.'); if (activationMatch[1] === user.id && !active) return error(res, 422, 'Você não pode desativar seu próprio usuário.'); const updated = await store.setUserActive(activationMatch[1], active); if (!updated) return error(res, 404, 'Usuário não encontrado.'); if (!active) for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, active ? 'ativou usuário' : 'desativou usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
-  const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); if (passwordMatch[1] === user.id) return error(res, 422, 'Use a alteração de senha do seu próprio perfil.'); const { password } = await requestBody(req); if (!validPassword(password)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password, true); if (!updated) return error(res, 404, 'Usuário não encontrado.'); for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome, trocaObrigatoria: true }); return respond(res, 200, { ok: true }); }
+  const activationMatch = pathname.match(/^\/api\/users\/([\w-]+)\/active$/); if (req.method === 'PUT' && activationMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem alterar usuários.'); const { active } = await requestBody(req); if (typeof active !== 'boolean') return error(res, 422, 'Informe o estado do usuário.'); if (activationMatch[1] === user.id && !active) return error(res, 422, 'Você não pode desativar seu próprio usuário.'); const updated = await store.setUserActive(activationMatch[1], active); if (!updated) return error(res, 404, 'Usuário não encontrado.'); if (!active) { for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); deleteVerificationChallenges(updated.id); } await log(user.id, active ? 'ativou usuário' : 'desativou usuário', 'users', updated.id, { nome: updated.nome }); return respond(res, 200, { user: publicUser(updated) }); }
+  const passwordMatch = pathname.match(/^\/api\/users\/([\w-]+)\/password$/); if (req.method === 'PUT' && passwordMatch) { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem redefinir senhas.'); if (passwordMatch[1] === user.id) return error(res, 422, 'Use a alteração de senha do seu próprio perfil.'); const { password } = await requestBody(req); if (!validPassword(password)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); const updated = await store.updatePassword(passwordMatch[1], password, true); if (!updated) return error(res, 404, 'Usuário não encontrado.'); for (const [token, session] of sessions) if (session.userId === updated.id) sessions.delete(token); deleteVerificationChallenges(updated.id); await log(user.id, 'redefiniu senha', 'users', updated.id, { nome: updated.nome, trocaObrigatoria: true }); return respond(res, 200, { ok: true }); }
   if (req.method === 'POST' && pathname === '/api/backups') { if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem gerar backup.'); const backupPath = await store.backupNow(); await log(user.id, 'gerou backup', 'backup', null, { mode: DATABASE_URL ? 'postgresql' : 'arquivo-local' }); return respond(res, 200, { ok: true, backup: backupPath ? path.basename(backupPath) : null, message: backupPath ? 'Backup criado com sucesso.' : 'No PostgreSQL, configure backup do servidor do banco.' }); }
   const networkQrMatch = pathname.match(/^\/api\/resources\/redes\/([\w-]+)\/qrcode$/);
   if (req.method === 'GET' && networkQrMatch) {
@@ -598,7 +631,6 @@ async function start() {
   server.listen(PORT, HOST, () => {
     const protocol = config.REQUIRE_HTTPS ? 'HTTPS via reverse proxy' : 'http';
     console.log(`Central TI disponível em ${protocol} na porta ${PORT}.`);
-    if (!config.REQUIRE_HTTPS) for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`);
     if (config.REQUIRE_HTTPS && !config.TRUST_PROXY) console.warn('CENTRAL_TI_REQUIRE_HTTPS está ativo. Configure um reverse proxy HTTPS e CENTRAL_TI_TRUST_PROXY=true para atender as requisições encaminhadas.');
     console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`);
   });

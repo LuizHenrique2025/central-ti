@@ -118,6 +118,7 @@ test('modo de produção rejeita HTTP direto e aceita somente o proxy HTTPS conf
       ...process.env,
       NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port),
       CENTRAL_TI_DATA_DIR: path.join(root, 'storage'), BACKUP_DIR: path.join(root, 'backups'),
+      CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'),
       CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: 'Administrador HTTPS',
       CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: `https-${crypto.randomUUID()}@centralti.test`,
       CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: `Https!${crypto.randomBytes(18).toString('hex')}`,
@@ -161,6 +162,116 @@ test('produção falha com proxy não confiável ou host exposto, mesmo com HTTP
   const exposedHost = inspectConfig({ HOST: '0.0.0.0', CENTRAL_TI_TRUST_PROXY: 'true' });
   assert.notEqual(exposedHost.status, 0);
   assert.match(exposedHost.stderr, /HOST deve ser um endereço local/);
+});
+
+test('2FA limita tentativas entre reemissões e invalida desafio de usuário desativado', async () => {
+  const smtpMessages = [];
+  const smtpServer = net.createServer(socket => {
+    let buffer = '';
+    let receivingMessage = false;
+    socket.setEncoding('utf8');
+    socket.write('220 localhost Central TI test SMTP\r\n');
+    socket.on('data', chunk => {
+      buffer += chunk;
+      while (buffer) {
+        if (receivingMessage) {
+          const end = buffer.indexOf('\r\n.\r\n');
+          if (end === -1) return;
+          smtpMessages.push(buffer.slice(0, end));
+          buffer = buffer.slice(end + 5);
+          receivingMessage = false;
+          socket.write('250 Message accepted\r\n');
+          continue;
+        }
+        const lineEnd = buffer.indexOf('\r\n');
+        if (lineEnd === -1) return;
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 2);
+        if (/^EHLO\b/i.test(line)) socket.write('250-localhost\r\n250 AUTH PLAIN LOGIN\r\n');
+        else if (/^AUTH\b/i.test(line)) socket.write('235 Authentication successful\r\n');
+        else if (/^(MAIL FROM|RCPT TO)\b/i.test(line)) socket.write('250 OK\r\n');
+        else if (/^DATA$/i.test(line)) { receivingMessage = true; socket.write('354 End data with <CR><LF>.<CR><LF>\r\n'); }
+        else if (/^QUIT$/i.test(line)) { socket.end('221 Bye\r\n'); return; }
+        else socket.write('250 OK\r\n');
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    smtpServer.once('error', reject);
+    smtpServer.listen(0, '127.0.0.1', resolve);
+  });
+  const smtpPort = smtpServer.address().port;
+  const port = await freePort();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'central-ti-2fa-test-'));
+  const adminEmail = `2fa-admin-${crypto.randomUUID()}@centralti.test`;
+  const adminPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const newAdminPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const targetPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const childProcess = spawn(process.execPath, ['server/server.js'], {
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: {
+      ...process.env,
+      HOST: '127.0.0.1', PORT: String(port), CENTRAL_TI_DATA_DIR: path.join(root, 'storage'), BACKUP_DIR: path.join(root, 'backups'),
+      CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'), DATABASE_URL: '', EMAIL_2FA_REQUIRED: 'true',
+      SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), SMTP_SECURE: 'false', SMTP_USER: 'test-user', SMTP_PASS: crypto.randomBytes(18).toString('hex'), MAIL_FROM: 'test@centralti.local',
+      CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: 'Administrador 2FA', CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: adminEmail, CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: adminPassword
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  const url = `http://127.0.0.1:${port}`;
+  const waitForMessage = async count => {
+    const deadline = Date.now() + 5000;
+    while (smtpMessages.length < count && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(smtpMessages.length >= count, 'O servidor SMTP de teste não recebeu o código.');
+    const match = smtpMessages.at(-1).match(/\b(\d{6})\b/);
+    assert.ok(match, 'O e-mail de teste não contém um código de seis dígitos.');
+    return match[1];
+  };
+  const post = async (pathname, body, token) => fetch(`${url}${pathname}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  try {
+    await waitForServer(url);
+    const adminLogin = await post('/api/auth/login', { email: adminEmail, password: adminPassword });
+    assert.equal(adminLogin.status, 200);
+    const adminChallenge = await adminLogin.json();
+    const adminCode = await waitForMessage(1);
+    const adminVerified = await post('/api/auth/verify-email', { verificationToken: adminChallenge.verificationToken, code: adminCode });
+    assert.equal(adminVerified.status, 200);
+    const adminToken = (await adminVerified.json()).token;
+    assert.equal((await post('/api/auth/change-password', { currentPassword: adminPassword, newPassword: newAdminPassword }, adminToken)).status, 200);
+
+    const createUser = await post('/api/users', { nome: 'Usuário 2FA', email: 'usuario-2fa@centralti.local', perfil: 'consulta', senha: targetPassword, permissions: {} }, adminToken);
+    assert.equal(createUser.status, 201);
+    const targetUser = (await createUser.json()).user;
+
+    const targetLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    assert.equal(targetLogin.status, 200);
+    const targetChallenge = await targetLogin.json();
+    const targetCode = await waitForMessage(2);
+    const deactivate = await fetch(`${url}/api/users/${targetUser.id}/active`, { method: 'PUT', headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ active: false }) });
+    assert.equal(deactivate.status, 200);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: targetChallenge.verificationToken, code: targetCode })).status, 401);
+
+    const reactivate = await fetch(`${url}/api/users/${targetUser.id}/active`, { method: 'PUT', headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ active: true }) });
+    assert.equal(reactivate.status, 200);
+    const firstLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    const firstChallenge = await firstLogin.json();
+    await waitForMessage(3);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: firstChallenge.verificationToken, code: '000000' })).status, 401);
+    const renewedLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    assert.equal(renewedLogin.status, 200);
+    const renewedChallenge = await renewedLogin.json();
+    await waitForMessage(4);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: firstChallenge.verificationToken, code: '000000' })).status, 401);
+    for (let index = 0; index < 4; index += 1) assert.equal((await post('/api/auth/verify-email', { verificationToken: renewedChallenge.verificationToken, code: '000000' })).status, 401);
+    assert.equal((await post('/api/auth/login', { email: targetUser.email, password: targetPassword })).status, 429);
+  } finally {
+    if (childProcess.exitCode === null) {
+      childProcess.kill();
+      await new Promise(resolve => childProcess.once('exit', resolve));
+    }
+    await new Promise(resolve => smtpServer.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('payloads XSS armazenados permanecem valores de atributo, não handlers executáveis', () => {
@@ -314,6 +425,30 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ currentPassword: bootstrapPassword, newPassword: 'Abcdef1!' })
   });
   assert.equal(changedAdmin.status, 200);
+
+  const preRegistrationPassword = `Primeiro1!${crypto.randomBytes(18).toString('hex')}`;
+  const preRegistration = await request('/api/users/pre-cadastro', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ nome: 'Colaborador Pré-cadastrado', cpf: '529.982.247-25', dataNascimento: '1990-05-20', setor: 'Recepção' })
+  });
+  assert.equal(preRegistration.status, 201);
+  const invalidFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-21' })
+  });
+  assert.equal(invalidFirstAccess.status, 401);
+  const identifiedFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-20' })
+  });
+  assert.equal(identifiedFirstAccess.status, 200);
+  const firstAccessChallenge = await identifiedFirstAccess.json();
+  const invalidCompletion = await fetch(`${baseUrl}/api/first-access/complete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-21', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
+  });
+  assert.equal(invalidCompletion.status, 422);
+  const completedFirstAccess = await fetch(`${baseUrl}/api/first-access/complete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-20', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
+  });
+  assert.equal(completedFirstAccess.status, 200);
 
   const materials = await request('/api/resources/materiais', adminToken);
   assert.equal(materials.status, 404);
