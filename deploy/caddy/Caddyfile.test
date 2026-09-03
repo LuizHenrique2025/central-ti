@@ -1,10 +1,14 @@
+{
+	# O teste atende apenas em :3443; não abra a porta 80 para redirecionar HTTP.
+	auto_https disable_redirects
+}
+
 # Proxy HTTPS exclusivo da base de teste da Central TI.
 # Defina CENTRAL_TI_TEST_HOST caso o DNS interno use outro nome.
 {$CENTRAL_TI_TEST_HOST:centralti-teste.revitalite.com.br}:3443 {
-    tls internal
+	tls internal
 
-    reverse_proxy 127.0.0.1:3001 {
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-Host {host}
-    }
+	reverse_proxy 127.0.0.1:3001 {
+		header_up X-Forwarded-Proto https
+	}
 }
