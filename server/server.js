@@ -3,7 +3,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
-const net = require('node:net');
 const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
@@ -15,8 +14,15 @@ const { createEncryptedStore } = require('./core/encrypted-store');
 const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
 const { createReportService } = require('./services/report-service');
+const { createFileStore } = require('./storage/file-store');
+const { createPostgresStore } = require('./storage/postgres-store');
 const { createSeedData } = require('./domain/seed-data');
 const { isCompletedDemandStatus, isExclusionDemand, exclusionValue, buildExclusionReport, sanitizeExclusionRequest, markExclusionMetadata } = require('./domain/exclusion-rules');
+const { collaboratorPermissions, hospitalOnly, canViewAllDemands, demandBelongsToUser } = require('./domain/demand-access');
+const { attachmentBytes, sanitizeScreenshot, demandForResponse, auditSafeRecord } = require('./domain/attachments');
+const { wifiQrPayload } = require('./domain/wifi');
+const { isAsset, assetSituation, assetDescription } = require('./domain/assets');
+const { sanitizeChecklist, sanitizeOptionalDate, normalizeProgramValue, automaticSla, validateRecordCharacters } = require('./domain/record-validation');
 const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, POSTGRES_MIGRATIONS_ENABLED, TWO_FACTOR_REQUIRED, SMTP_ENABLED, ATTACHMENT_MAX_COUNT, ATTACHMENT_MAX_STORAGE_BYTES } = config;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
@@ -29,16 +35,6 @@ const encryptedStore = createEncryptedStore(config.DATA_ENCRYPTION_KEY);
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
-function escapeWifiQrValue(value) { return String(value ?? '').replace(/([\\;,:\"])/g, '\\$1'); }
-function wifiQrPayload(network) { return `WIFI:T:WPA;S:${escapeWifiQrValue(network.nome)};P:${escapeWifiQrValue(network.senha)};;`; }
-function collaboratorPermissions() { return { demandas: { list: true, create: true, update: false, consult: true, delete: false, scope: 'hospital' }, redes: { list: true, create: false, update: false, consult: true, delete: false }, ramais: { list: true, create: false, update: false, consult: true, delete: false } }; }
-function hospitalOnly(user) { return user.perfil !== 'admin' && Boolean(user.permissions?.demandas); }
-function canViewAllDemands(user) { return user.perfil === 'admin' || user.perfil === 'ti'; }
-function demandBelongsToUser(record, user) { return canViewAllDemands(user) || record.createdBy === user.id || record.solicitanteId === user.id; }
-function attachmentBytes(attachment) { return attachment?.data ? Buffer.byteLength(attachment.data, 'base64') : 0; }
-function interactionForResponse(interaction, includeAttachment = false) { const value = { ...interaction }; if (!includeAttachment && value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
-function demandForResponse(record, includeAttachment = false) { const value = { ...record, interacoes: (record.interacoes || []).map(interaction => interactionForResponse(interaction, includeAttachment)) }; if (!includeAttachment && value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
-function auditSafeRecord(record) { const value = { ...record, interacoes: (record.interacoes || []).map(interaction => interactionForResponse(interaction)) }; if (value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
 async function assertAttachmentQuota(userId, attachment, replacedBytes = 0) { const usage = await store.attachmentUsageFor(userId); const nextCount = usage.count + (replacedBytes ? 0 : 1), nextBytes = usage.bytes - replacedBytes + attachmentBytes(attachment); if (nextCount > ATTACHMENT_MAX_COUNT || nextBytes > ATTACHMENT_MAX_STORAGE_BYTES) { const sizeMb = Math.round(ATTACHMENT_MAX_STORAGE_BYTES / 1_000_000); const exception = new Error(`Limite de prints atingido: até ${ATTACHMENT_MAX_COUNT} anexos e ${sizeMb} MB por usuário.`); exception.statusCode = 429; throw exception; } }
 function initialData() {
   const admin = config.BOOTSTRAP_ADMIN;
@@ -117,80 +113,9 @@ function createFileBackup(force = false) {
 }
 function writeFileDb(data) { fs.mkdirSync(DB_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, encryptedStore.serialize(data)); createFileBackup(); }
 function publicUser(user) { return { id: user.id, nome: user.nome, email: user.email || '', login: user.login || '', setor: user.setor || '', cpfLast4: user.cpfLast4 || '', perfil: user.perfil, active: user.active !== false, activationStatus: user.activationStatus || 'ativo', permissions: user.permissions || null, mustChangePassword: Boolean(user.mustChangePassword), createdAt: user.createdAt }; }
-function pgDate(value) { return value instanceof Date ? value.toISOString() : value || null; }
-function normalizePgDates(row) { if (!row) return row; const value = { ...row }; for (const key of ['createdAt', 'updatedAt', 'readAt', 'senderDeletedAt', 'recipientDeletedAt', 'senderArchivedAt', 'recipientArchivedAt', 'dataNascimento']) if (key in value) value[key] = pgDate(value[key]); return value; }
-function pgRecord(row) { return { id: row.id, ...row.data, createdAt: pgDate(row.created_at), updatedAt: pgDate(row.updated_at), createdBy: row.created_by, updatedBy: row.updated_by }; }
 
-const fileStore = {
-  async users() { return readFileDb().users; },
-  async findUserByEmail(email) { return readFileDb().users.find(user => user.email === email); },
-  async findUserByLogin(login) { const clean = String(login || '').trim().toLowerCase(); return readFileDb().users.find(user => user.email?.toLowerCase() === clean || user.login?.toLowerCase() === clean); },
-  async findUser(idValue) { return readFileDb().users.find(user => user.id === idValue); },
-  async createUser(user) { const db = readFileDb(); db.users.push(user); writeFileDb(db); return user; },
-  async renameUser(userId, nome) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.nome = nome; target.updatedAt = now(); writeFileDb(db); return target; },
-  async setUserActive(userId, active) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.active = active; target.updatedAt = now(); writeFileDb(db); return target; },
-  async setUserPermissions(userId, permissions) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; target.permissions = permissions; target.updatedAt = now(); writeFileDb(db); return target; },
-  async updateUser(userId, fields) { const db = readFileDb(); const target = db.users.find(user => user.id === userId); if (!target) return null; Object.assign(target, fields, { updatedAt: now() }); writeFileDb(db); return target; },
-  async updatePassword(userId, password, mustChangePassword = false) { const db = readFileDb(); const user = db.users.find(x => x.id === userId); if (!user) return null; Object.assign(user, passwordHash(password), { mustChangePassword, updatedAt: now() }); writeFileDb(db); return user; },
-  async records(resource) { return readFileDb()[resource]; },
-  async record(resource, recordId) { return readFileDb()[resource].find(record => record.id === recordId); },
-  async createRecord(resource, record) { const db = readFileDb(); db[resource].push(record); writeFileDb(db); return record; },
-  async updateRecord(resource, recordId, fields, userId) { const db = readFileDb(); const record = db[resource].find(item => item.id === recordId); if (!record) return null; Object.assign(record, fields, { updatedAt: now(), updatedBy: userId }); writeFileDb(db); return record; },
-  async deleteRecord(resource, recordId) { const db = readFileDb(); const index = db[resource].findIndex(item => item.id === recordId); if (index < 0) return null; const [removed] = db[resource].splice(index, 1); writeFileDb(db); return removed; },
-  async messagesFor(userId) { return readFileDb().messages.filter(message => message.recipientId === userId || message.senderId === userId); },
-  async createMessage(message) { const db = readFileDb(); db.messages.push(message); writeFileDb(db); return message; },
-  async messageFor(messageId, userId) { return readFileDb().messages.find(message => message.id === messageId && (message.senderId === userId || message.recipientId === userId)); },
-  async attachmentUsageFor(userId) { const db = readFileDb(); const messages = db.messages.filter(message => message.senderId === userId && message.attachmentData); const demands = db.demandas.flatMap(record => [record.anexoPrint, ...(record.interacoes || []).map(interaction => interaction.anexoPrint)].filter(attachment => attachment?.data && (attachment.ownerId || record.createdBy) === userId)); return { count: messages.length + demands.length, bytes: messages.reduce((total, message) => total + Buffer.byteLength(message.attachmentData, 'base64'), 0) + demands.reduce((total, attachment) => total + attachmentBytes(attachment), 0) }; },
-  async markMessageRead(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && x.recipientId === userId); if (!message) return null; message.readAt = now(); writeFileDb(db); return message; },
-  async deleteMessageFor(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && (x.recipientId === userId || x.senderId === userId)); if (!message) return null; if (message.recipientId === userId) message.recipientDeletedAt = now(); if (message.senderId === userId) message.senderDeletedAt = now(); writeFileDb(db); return message; },
-  async archiveMessageFor(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && (x.recipientId === userId || x.senderId === userId)); if (!message) return null; if (message.recipientId === userId) message.recipientArchivedAt = now(); if (message.senderId === userId) message.senderArchivedAt = now(); writeFileDb(db); return message; },
-  async restoreMessageFor(messageId, userId) { const db = readFileDb(); const message = db.messages.find(x => x.id === messageId && (x.recipientId === userId || x.senderId === userId)); if (!message) return null; if (message.recipientId === userId) message.recipientArchivedAt = null; if (message.senderId === userId) message.senderArchivedAt = null; writeFileDb(db); return message; },
-  async announcements() { return readFileDb().announcements.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); },
-  async createAnnouncement(announcement) { const db = readFileDb(); db.announcements.push(announcement); writeFileDb(db); return announcement; },
-  async deleteAnnouncement(announcementId) { const db = readFileDb(); const index = db.announcements.findIndex(item => item.id === announcementId); if (index < 0) return null; const [removed] = db.announcements.splice(index, 1); writeFileDb(db); return removed; },
-  async audit(entry) { const db = readFileDb(); db.auditLogs.push(entry); writeFileDb(db); },
-  async audits(resource, recordId) { return readFileDb().auditLogs.filter(log => (!resource || log.resource === resource) && (!recordId || log.recordId === recordId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
-  ,async backupNow() { return createFileBackup(true); }
-  ,async demandStatuses() { return readFileDb().demandStatuses; }
-  ,async setDemandStatuses(statuses) { const db = readFileDb(); db.demandStatuses = statuses; writeFileDb(db); return statuses; }
-  ,async computerGroups() { return readFileDb().computerGroups; }
-  ,async setComputerGroups(groups) { const db = readFileDb(); db.computerGroups = groups; writeFileDb(db); return groups; }
-};
-const pgStore = {
-  async users() { return (await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",data_nascimento AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users ORDER BY nome')).rows.map(normalizePgDates); },
-  async findUserByEmail(email) { return normalizePgDates((await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",data_nascimento AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users WHERE lower(email) = lower($1)', [email])).rows[0]); },
-  async findUserByLogin(login) { return normalizePgDates((await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",data_nascimento AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users WHERE lower(email) = lower($1) OR lower(login) = lower($1)', [login])).rows[0]); },
-  async findUser(idValue) { return normalizePgDates((await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",data_nascimento AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users WHERE id = $1', [idValue])).rows[0]); },
-  async createUser(user) { await pool.query('INSERT INTO users (id,nome,email,login,setor,cpf_hash,cpf_last4,data_nascimento,perfil,active,activation_status,permissions,salt,hash,must_change_password,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)', [user.id, user.nome, user.email || null, user.login || null, user.setor || '', user.cpfHash || null, user.cpfLast4 || '', user.dataNascimento || null, user.perfil, user.active !== false, user.activationStatus || 'ativo', JSON.stringify(user.permissions || {}), user.salt, user.hash, Boolean(user.mustChangePassword), user.createdAt, user.updatedAt || user.createdAt]); return user; },
-  async updateUser(userId, fields) { const columns = { nome: 'nome', email: 'email', login: 'login', setor: 'setor', cpfHash: 'cpf_hash', cpfLast4: 'cpf_last4', dataNascimento: 'data_nascimento', perfil: 'perfil', active: 'active', activationStatus: 'activation_status', permissions: 'permissions', salt: 'salt', hash: 'hash', mustChangePassword: 'must_change_password' }; const entries = Object.entries(fields).filter(([key]) => key in columns); if (!entries.length) return this.findUser(userId); const values = entries.map(([key, value]) => key === 'permissions' ? JSON.stringify(value || {}) : value ?? null); const assignments = entries.map(([key], index) => `${columns[key]}=$${index + 2}`).join(', '); const result = await pool.query(`UPDATE users SET ${assignments}, updated_at=NOW() WHERE id=$1 RETURNING id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",data_nascimento AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt"`, [userId, ...values]); return normalizePgDates(result.rows[0]); },
-  async renameUser(userId, nome) { return this.updateUser(userId, { nome }); },
-  async setUserActive(userId, active) { return this.updateUser(userId, { active }); },
-  async setUserPermissions(userId, permissions) { return this.updateUser(userId, { permissions }); },
-  async updatePassword(userId, password, mustChangePassword = false) { const values = passwordHash(password); return this.updateUser(userId, { ...values, mustChangePassword }); },
-  async records(resource) { return (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 ORDER BY updated_at DESC', [resource])).rows.map(pgRecord); },
-  async record(resource, recordId) { const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
-  async createRecord(resource, record) { await pool.query('INSERT INTO records (id,resource,data,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [record.id, resource, record, record.createdAt, record.updatedAt, record.createdBy, record.updatedBy]); return record; },
-  async updateRecord(resource, recordId, fields, userId) { const previous = await this.record(resource, recordId); if (!previous) return null; const updated = { ...previous, ...fields, updatedAt: now(), updatedBy: userId }; await pool.query('UPDATE records SET data=$3,updated_at=$4,updated_by=$5 WHERE resource=$1 AND id=$2', [resource, recordId, updated, updated.updatedAt, userId]); return updated; },
-  async deleteRecord(resource, recordId) { const previous = await this.record(resource, recordId); if (!previous) return null; await pool.query('DELETE FROM records WHERE resource=$1 AND id=$2', [resource, recordId]); return previous; },
-  async messagesFor(userId) { return (await pool.query('SELECT id,sender_id AS "senderId",recipient_id AS "recipientId",thread_id AS "threadId",reply_to_id AS "replyToId",subject,body,attachment_name AS "attachmentName",attachment_mime AS "attachmentMime",created_at AS "createdAt",read_at AS "readAt",sender_deleted_at AS "senderDeletedAt",recipient_deleted_at AS "recipientDeletedAt",sender_archived_at AS "senderArchivedAt",recipient_archived_at AS "recipientArchivedAt" FROM messages WHERE recipient_id=$1 OR sender_id=$1 ORDER BY created_at DESC', [userId])).rows.map(normalizePgDates); },
-  async createMessage(message) { await pool.query('INSERT INTO messages (id,sender_id,recipient_id,thread_id,reply_to_id,subject,body,attachment_name,attachment_mime,attachment_data,created_at,read_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)', [message.id, message.senderId, message.recipientId, message.threadId || null, message.replyToId || null, message.subject, message.body, message.attachmentName || null, message.attachmentMime || null, message.attachmentData ? Buffer.from(message.attachmentData, 'base64') : null, message.createdAt, message.readAt]); return message; },
-  async messageFor(messageId, userId) { return normalizePgDates((await pool.query('SELECT id,sender_id AS "senderId",recipient_id AS "recipientId",attachment_name AS "attachmentName",attachment_mime AS "attachmentMime",attachment_data AS "attachmentData" FROM messages WHERE id=$1 AND (sender_id=$2 OR recipient_id=$2)', [messageId, userId])).rows[0]); },
-  async attachmentUsageFor(userId) { const messages = (await pool.query('SELECT COUNT(*)::int AS count,COALESCE(SUM(octet_length(attachment_data)),0)::bigint AS bytes FROM messages WHERE sender_id=$1 AND attachment_data IS NOT NULL', [userId])).rows[0]; const demands = (await pool.query("SELECT COUNT(*)::int AS count,COALESCE(SUM(octet_length(decode(attachment_data,'base64'))),0)::bigint AS bytes FROM (SELECT data->'anexoPrint'->>'data' AS attachment_data FROM records WHERE resource='demandas' AND data ? 'anexoPrint' AND (data->'anexoPrint'->>'ownerId'=$1 OR (data->'anexoPrint'->>'ownerId' IS NULL AND created_by=$1::uuid)) UNION ALL SELECT interaction.value->'anexoPrint'->>'data' AS attachment_data FROM records CROSS JOIN LATERAL jsonb_array_elements(COALESCE(data->'interacoes', '[]'::jsonb)) AS interaction(value) WHERE resource='demandas' AND interaction.value ? 'anexoPrint' AND (interaction.value->'anexoPrint'->>'ownerId'=$1 OR (interaction.value->'anexoPrint'->>'ownerId' IS NULL AND interaction.value->>'autorId'=$1))) AS attachments WHERE attachment_data IS NOT NULL", [userId])).rows[0]; return { count: Number(messages.count) + Number(demands.count), bytes: Number(messages.bytes) + Number(demands.bytes) }; },
-  async markMessageRead(messageId, userId) { return (await pool.query('UPDATE messages SET read_at=NOW() WHERE id=$1 AND recipient_id=$2 RETURNING id', [messageId, userId])).rows[0]; },
-  async deleteMessageFor(messageId, userId) { return (await pool.query('UPDATE messages SET recipient_deleted_at=CASE WHEN recipient_id=$2 THEN NOW() ELSE recipient_deleted_at END, sender_deleted_at=CASE WHEN sender_id=$2 THEN NOW() ELSE sender_deleted_at END WHERE id=$1 AND (recipient_id=$2 OR sender_id=$2) RETURNING id', [messageId, userId])).rows[0]; },
-  async archiveMessageFor(messageId, userId) { return (await pool.query('UPDATE messages SET recipient_archived_at=CASE WHEN recipient_id=$2 THEN NOW() ELSE recipient_archived_at END, sender_archived_at=CASE WHEN sender_id=$2 THEN NOW() ELSE sender_archived_at END WHERE id=$1 AND (recipient_id=$2 OR sender_id=$2) RETURNING id', [messageId, userId])).rows[0]; },
-  async restoreMessageFor(messageId, userId) { return (await pool.query('UPDATE messages SET recipient_archived_at=CASE WHEN recipient_id=$2 THEN NULL ELSE recipient_archived_at END, sender_archived_at=CASE WHEN sender_id=$2 THEN NULL ELSE sender_archived_at END WHERE id=$1 AND (recipient_id=$2 OR sender_id=$2) RETURNING id', [messageId, userId])).rows[0]; },
-  async announcements() { return (await pool.query('SELECT id,title,body,author_id AS "authorId",author_name AS "authorName",created_at AS "createdAt" FROM announcements ORDER BY created_at DESC')).rows.map(normalizePgDates); },
-  async createAnnouncement(announcement) { await pool.query('INSERT INTO announcements (id,title,body,author_id,author_name,created_at) VALUES ($1,$2,$3,$4,$5,$6)', [announcement.id, announcement.title, announcement.body, announcement.authorId, announcement.authorName, announcement.createdAt]); return announcement; },
-  async deleteAnnouncement(announcementId) { const result = await pool.query('DELETE FROM announcements WHERE id=$1 RETURNING id,title,body,author_id AS "authorId",author_name AS "authorName",created_at AS "createdAt"', [announcementId]); return normalizePgDates(result.rows[0]); },
-  async audit(entry) { await pool.query('INSERT INTO audit_logs (id,user_id,action,resource,record_id,details,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [entry.id, entry.userId, entry.action, entry.resource, entry.recordId, entry.details, entry.createdAt]); },
-  async audits(resource, recordId) { const query = `SELECT a.id,a.action,a.resource,a.record_id AS "recordId",a.details,a.created_at AS "createdAt",u.nome AS "userName" FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id WHERE ($1::text IS NULL OR a.resource=$1) AND ($2::uuid IS NULL OR a.record_id=$2) ORDER BY a.created_at DESC LIMIT 100`; return (await pool.query(query, [resource || null, recordId || null])).rows.map(normalizePgDates); }
-  ,async backupNow() { return null; }
-  ,async demandStatuses() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='demand_statuses'")).rows[0]; return row?.value || ['Aberta', 'Em andamento', 'Concluída']; }
-  ,async setDemandStatuses(statuses) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('demand_statuses',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(statuses)]); return statuses; }
-  ,async computerGroups() { const row = (await pool.query("SELECT value FROM app_settings WHERE key='computer_groups'")).rows[0]; return row?.value || ['Geral', 'Faturamento', 'Eletivas', 'Laboratório']; }
-  ,async setComputerGroups(groups) { await pool.query("INSERT INTO app_settings (key,value) VALUES ('computer_groups',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(groups)]); return groups; }
-};
+const fileStore = createFileStore({ readFileDb, writeFileDb, createFileBackup, now, passwordHash });
+const pgStore = createPostgresStore({ pool, now, passwordHash });
 let store = fileStore;
 const reportService = createReportService({ getStore: () => store, resourceDefinitions, canAccess, demandBelongsToUser, buildExclusionReport, exclusionValue, formatProgramValue });
 const sessionService = createSessionService({ getStore: () => store, sessionTtlMs: SESSION_TTL_MS, error });
@@ -287,7 +212,6 @@ sanitize = function (values, keys) {
   if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   return sanitizeOriginal(values, keys);
 };
-function sanitizeScreenshot(value) { if (!value) return undefined; const allowed = { 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff', 'image/webp': '52494646' }; if (!allowed[value.mime] || typeof value.data !== 'string' || value.data.length > 6_700_000) return null; const image = Buffer.from(value.data, 'base64'); return image.length && image.length <= 5_000_000 && image.subarray(0, allowed[value.mime].length / 2).toString('hex') === allowed[value.mime] ? { mime: value.mime, data: image.toString('base64') } : null; }
 function sanitizeDemand(values) {
   if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
@@ -325,7 +249,6 @@ function sanitizeDemandDetailFields(values, subject) {
   }
   return result;
 }
-function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeHospitalDemand(values, user) {
   const text = (value, limit = 250) => repairTextEncoding(String(value || '').trim());
   const demand = { titulo: text(values.titulo), solicitante: user.nome, prioridade: text(values.prioridade), status: 'Aberta', categoria: text(values.categoria), assunto: text(values.assunto), outroDetalhe: text(values.outroDetalhe), tipo: 'externa', descricao: text(values.descricao || values.novaObservacao || 'Não informado', 3000), tecnicoResponsavel: '', prazoSla: '', novaObservacao: text(values.novaObservacao, 3000) };
@@ -340,46 +263,7 @@ function sanitizeHospitalDemand(values, user) {
   }
   return demand;
 }
-function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
-function normalizeProgramValue(value) { const digits = String(value || '').replace(/\D/g, ''); const cents = Number(digits); return Number.isSafeInteger(cents) && cents > 0 && cents <= 100000000000 ? cents : null; }
 function formatProgramValue(cents) { return (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function automaticSla(priority) { const hours = { 'Crítica': 4, Alta: 24, 'Média': 48, Baixa: 120 }[priority] || 48; return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(); }
-function validateRecordCharacters(resource, payload) {
-  for (const value of Object.values(payload)) if (typeof value === 'string' && /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F<>\uFFFD]/.test(value)) return 'Há caracteres inválidos no cadastro. Revise acentos, símbolos e texto copiado.';
-  if (isAsset(resource)) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{1,49}$/.test(payload.patrimonio)) return 'O patrimônio deve ter de 2 a 50 caracteres: letras, números, ponto, hífen, sublinhado ou barra.';
-    if (resource === 'computadores' && !net.isIP(payload.ip)) return 'Informe um endereço IP válido, por exemplo: 192.168.1.25.';
-  }
-  if (resource === 'computadores' && !/^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(payload.grupo)) return 'O grupo possui caracteres inválidos.';
-  if (resource === 'computadores') {
-    const dates = [payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
-    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
-    if (payload.dataSolicitacao && payload.dataRetirada && payload.dataSolicitacao > payload.dataRetirada) return 'A retirada não pode ser anterior à solicitação.';
-    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
-  }
-  if (resource === 'equipamentos') {
-    if (!net.isIP(payload.ip)) return 'Informe um endereço IP válido para localizar o equipamento na rede.';
-    const dates = [payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
-    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
-    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
-  }
-  if (resource === 'ramais' && payload.email && !/^\S+@\S+\.\S+$/.test(payload.email)) return 'Informe um e-mail válido para o ramal.';
-  if (resource === 'programas') {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dataContratacao) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dataRenovacao)) return 'Informe datas válidas para contratação e renovação.';
-    if (payload.dataRenovacao < payload.dataContratacao) return 'A data de renovação não pode ser anterior à contratação.';
-    if (!Number.isSafeInteger(payload.valor) || payload.valor <= 0) return 'Informe um valor válido para o programa.';
-  }
-  return null;
-}
-function isAsset(resource) { return resource === 'computadores' || resource === 'equipamentos'; }
-function assetSituation(resource, record) {
-  const current = String(resource === 'computadores' ? record.status : record.condicao).toLowerCase();
-  if (current.includes('dispon')) return 'Disponível';
-  if (current.includes('manuten')) return 'Em manutenção';
-  if (current.includes('indispon')) return 'Indisponível';
-  return 'Em uso';
-}
-function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.categoriaEquipamento || 'Equipamento'}`; }
 async function nextPatrimonyCode() {
   const highest = (await store.records('patrimonio')).reduce((max, item) => {
     const match = String(item.codigo || '').match(/^PAT-(\d+)$/i);
@@ -669,9 +553,9 @@ async function api(req, res, url) {
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
       if (resource === 'demandas' && hospitalOnly(user)) payload.empresa = 'Hospital Dia Revitalite';
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist, computerChecklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
-      const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
+      const characterError = validateRecordCharacters(resource, payload, isAsset); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
@@ -685,9 +569,9 @@ async function api(req, res, url) {
       if (resource === 'demandas' && body.anexoPrint) { const screenshot = sanitizeScreenshot(body.anexoPrint); if (screenshot === null) return error(res, 422, 'Envie somente um print PNG, JPG ou WEBP de até 5 MB.'); const replacedBytes = (previous.anexoPrint?.ownerId || previous.createdBy) === user.id ? attachmentBytes(previous.anexoPrint) : 0; await assertAttachmentQuota(user.id, screenshot, replacedBytes); payload.anexoPrint = { ...screenshot, ownerId: user.id }; }
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist, computerChecklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
-      const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
+      const characterError = validateRecordCharacters(resource, payload, isAsset); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload, recordId); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       if (resource === 'demandas' && isExclusionDemand(payload)) {
