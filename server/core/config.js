@@ -20,7 +20,7 @@ const dataDirectory = process.env.CENTRAL_TI_DATA_DIR
   : path.join(ROOT, 'storage');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PRODUCTION = NODE_ENV === 'production';
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 const TRUST_PROXY = process.env.CENTRAL_TI_TRUST_PROXY === 'true';
 const REQUIRE_HTTPS = PRODUCTION || process.env.CENTRAL_TI_REQUIRE_HTTPS === 'true';
 const bootstrapFields = ['CENTRAL_TI_BOOTSTRAP_ADMIN_NAME', 'CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL', 'CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD'];
@@ -39,7 +39,7 @@ if (PRODUCTION && !TRUST_PROXY) {
   throw new Error('Em produção, configure CENTRAL_TI_TRUST_PROXY=true e publique a Central TI somente atrás de um reverse proxy HTTPS confiável.');
 }
 
-if (!loopbackHost(HOST)) {
+if (PRODUCTION && !loopbackHost(HOST)) {
   throw new Error('HOST deve ser um endereço local (127.0.0.1, ::1 ou localhost). Publique a Central TI por um reverse proxy HTTPS; não exponha a porta do Node diretamente.');
 }
 

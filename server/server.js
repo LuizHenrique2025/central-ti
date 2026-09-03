@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
@@ -87,6 +88,7 @@ function repairStoredText(value) {
   if (value && typeof value === 'object') { for (const [key, item] of Object.entries(value)) value[key] = repairStoredText(item); }
   return value;
 }
+function localAddresses() { return Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${PORT}`); }
 function repairLegacyExtensions(data) {
   const names = new Map([
     ['204', 'PA Recepção'], ['206', 'PA Ambulatório'], ['207', 'Pronto Atendimento'], ['208', 'Farmácia Satélite'], ['209', 'Recepção Eletivas'], ['210', 'Sala de Triagem'], ['211', 'Consultório 01'], ['212', 'Consultório 02'], ['213', 'Consultório 03'], ['214', 'Consultório 04'], ['216', 'Raio X'], ['217', 'Exames Complementares'], ['218', 'Tomografia'], ['325', 'Centro Cirúrgico 1'], ['326', 'Centro Cirúrgico 2'], ['327', 'Enfermaria 1º Piso'], ['219', 'Recepção 1º Piso'], ['200', 'Call Center Isa'], ['201', 'Call Center Fernanda'], ['202', 'Call Center Geovanna'], ['300', 'Itapema Saúde 1'], ['301', 'Itapema Saúde 2'], ['302', 'Itapema Saúde 3'], ['222', 'Gerência Aline'], ['224', 'RH Milena'], ['229', 'Patricia'], ['232', 'Observação'], ['237', 'Laboratório'], ['240', 'CAF'], ['500', 'Faturamento Camyla'], ['501', 'Faturamento Isabella'], ['502', 'Faturamento Gislaine'], ['503', 'Sup Faturamento Susi'], ['406', 'T.I. Suporte Henrique'], ['408', 'T.I. Suporte MAX']
@@ -416,7 +418,7 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && pathname === '/api/auth/logout') { const token = req.headers.authorization?.replace(/^Bearer\s+/i, ''); if (token) sessions.delete(token); return respond(res, 200, { ok: true }); }
   const user = await requireAuth(req, res); if (!user) return;
-  if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: [], database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
+  if (req.method === 'GET' && pathname === '/api/me') return respond(res, 200, { user: publicUser(user), networkUrls: localAddresses(), database: DATABASE_URL ? 'PostgreSQL' : 'Arquivo local (configure PostgreSQL para operação multiusuário)' });
   if (req.method === 'GET' && pathname === '/api/integrations/microsip/status') return respond(res, 200, microSipStatus());
   if (req.method === 'POST' && pathname === '/api/auth/change-password') { const { currentPassword, newPassword } = await requestBody(req); if (!verifyPassword(currentPassword || '', user)) return error(res, 401, 'Sua senha atual está incorreta.'); if (!validPassword(newPassword)) return error(res, 422, 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'); await store.updatePassword(user.id, newPassword); await log(user.id, 'alterou a própria senha'); return respond(res, 200, { ok: true }); }
   if (user.mustChangePassword) return error(res, 403, 'Altere sua senha antes de acessar o sistema.');
@@ -631,6 +633,7 @@ async function start() {
   server.listen(PORT, HOST, () => {
     const protocol = config.REQUIRE_HTTPS ? 'HTTPS via reverse proxy' : 'http';
     console.log(`Central TI disponível em ${protocol} na porta ${PORT}.`);
+    if (!config.REQUIRE_HTTPS) for (const address of localAddresses()) console.log(`Acesso pela rede: ${address}`);
     if (config.REQUIRE_HTTPS && !config.TRUST_PROXY) console.warn('CENTRAL_TI_REQUIRE_HTTPS está ativo. Configure um reverse proxy HTTPS e CENTRAL_TI_TRUST_PROXY=true para atender as requisições encaminhadas.');
     console.log(`Banco de dados: ${DATABASE_URL ? 'PostgreSQL' : 'arquivo local (configure DATABASE_URL para PostgreSQL)'}`);
   });
