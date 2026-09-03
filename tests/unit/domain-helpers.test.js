@@ -7,6 +7,7 @@ const { attachmentBytes, auditSafeRecord, sanitizeScreenshot } = require('../../
 const { wifiQrPayload } = require('../../server/domain/wifi');
 const { assetSituation } = require('../../server/domain/assets');
 const { normalizeProgramValue, sanitizeChecklist, validateRecordCharacters } = require('../../server/domain/record-validation');
+const { csvCell, csvDocument } = require('../../server/core/csv');
 
 test('regras de demanda preservam a visibilidade e permissões do colaborador', () => {
   const permissions = collaboratorPermissions();
@@ -43,4 +44,11 @@ test('a interface carrega o recurso de anexos separado da aplicação principal'
   assert.doesNotMatch(page, /assets\/js\/features\/attachments\.js/);
   assert.match(app, /CentralTiAttachments\?\.enhanceCurrentSurface/);
   assert.match(bootstrap, /function enhanceCurrentSurface/);
+});
+
+test('exportações CSV tratam valores como texto, inclusive fórmulas', () => {
+  for (const value of ['=1+1', '+SUM(A1)', '-10', '@cmd', '\t=IMPORTXML']) assert.match(csvCell(value), /^"'/);
+  const exported = csvDocument([['valor'], ['=1+1'], ['\t=IMPORTXML']]);
+  assert.match(exported, /"'=1\+1"/);
+  assert.match(exported, /"'\t=IMPORTXML"/);
 });

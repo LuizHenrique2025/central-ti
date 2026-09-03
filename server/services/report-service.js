@@ -1,3 +1,5 @@
+const { csvDocument } = require('../core/csv');
+
 function createReportService({ getStore, resourceDefinitions, canAccess, demandBelongsToUser, buildExclusionReport, exclusionValue, formatProgramValue }) {
   const inPeriod = (record, start, end) => (!start || String(record.createdAt || '') >= `${start}T00:00:00`) && (!end || String(record.createdAt || '') <= `${end}T23:59:59.999`);
   const exclusionFilters = url => Object.fromEntries(['user', 'sector', 'type', 'reason', 'status'].map(field => [field, url.searchParams.get(`exclusion${field[0].toUpperCase()}${field.slice(1)}`) || '']));
@@ -98,7 +100,7 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
       const costs = programs.reduce((total, record) => { if (record.periodicidade === 'Mensal') total.monthly += Number(record.valor); else total.annual += Number(record.valor); return total; }, { monthly: 0, annual: 0 });
       rows.push([], ['Custos recorrentes de programas', 'Valor'], ['Custo mensal equivalente', formatProgramValue(Math.round(costs.monthly + costs.annual / 12))], ['Custo anual estimado', formatProgramValue(costs.monthly * 12 + costs.annual)]);
     }
-    return `\uFEFF${rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n')}`;
+    return csvDocument(rows);
   }
 
   return { report, exportCsv };

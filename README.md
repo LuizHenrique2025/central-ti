@@ -36,9 +36,7 @@ Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entreg
 
 ### Desenvolvimento na mesma rede
 
-Com o sistema iniciado nesta máquina, o painel mostra o endereço de rede local, por exemplo `http://192.168.x.x:3000`. Envie esse endereço ao seu amigo: ambos trabalharão com os mesmos cadastros e mensagens em tempo real ao atualizar a página.
-
-Se o Windows solicitar permissão de rede para o Node.js, permita o acesso em **Redes privadas**. O computador que executa `npm start` deve ficar ligado enquanto houver usuários acessando.
+O servidor Node escuta somente em `127.0.0.1`. Para compartilhar o sistema na rede, publique-o por um reverse proxy HTTPS e compartilhe apenas a URL HTTPS do proxy. Não exponha diretamente a porta do Node nem compartilhe URLs HTTP.
 
 ## Primeiro administrador
 
@@ -54,7 +52,7 @@ Em produção, defina `NODE_ENV=production`. HTTPS passa a ser obrigatório e n�
 
 O proxy deve encaminhar `X-Forwarded-Proto: https`; então defina `CENTRAL_TI_TRUST_PROXY=true`. Não exponha diretamente a porta do Node. A aplicação retorna HTTP 426 para tráfego direto inseguro e envia HSTS. A opção `CENTRAL_TI_REQUIRE_HTTPS` pode ser usada apenas fora de produção para antecipar esse bloqueio em um ambiente controlado.
 
-Para criptografar a base local em repouso, configure `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
+Para usar a base local, configure obrigatoriamente `CENTRAL_TI_DATA_ENCRYPTION_KEY` com uma chave Base64 de 32 bytes (o comando para gerá-la está no `.env.example`). A próxima gravação converte a base existente para AES-256-GCM; mantenha a chave fora do Git e em um gerenciador de segredos. Esta proteção vale para o modo de arquivo local, incluindo novos backups.
 
 ### Redefinir senha de um usuário
 
