@@ -3,7 +3,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
-const net = require('node:net');
 const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const { resourceDefinitions, optionalResourceFields, access, computerChecklist, disabledResources } = require('./domain/resources');
@@ -17,6 +16,11 @@ const { createSessionService } = require('./services/session-service');
 const { createReportService } = require('./services/report-service');
 const { createSeedData } = require('./domain/seed-data');
 const { isCompletedDemandStatus, isExclusionDemand, exclusionValue, buildExclusionReport, sanitizeExclusionRequest, markExclusionMetadata } = require('./domain/exclusion-rules');
+const { collaboratorPermissions, hospitalOnly, canViewAllDemands, demandBelongsToUser } = require('./domain/demand-access');
+const { attachmentBytes, sanitizeScreenshot, demandForResponse, auditSafeRecord } = require('./domain/attachments');
+const { wifiQrPayload } = require('./domain/wifi');
+const { isAsset, assetSituation, assetDescription } = require('./domain/assets');
+const { sanitizeChecklist, sanitizeOptionalDate, normalizeProgramValue, automaticSla, validateRecordCharacters } = require('./domain/record-validation');
 const { PORT, HOST, ROOT, PUBLIC_DIR, DB_DIR, DB_FILE, BACKUP_DIR, DATABASE_URL, POSTGRES_MIGRATIONS_ENABLED, TWO_FACTOR_REQUIRED, SMTP_ENABLED, ATTACHMENT_MAX_COUNT, ATTACHMENT_MAX_STORAGE_BYTES } = config;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const verificationChallenges = new Map();
@@ -29,16 +33,6 @@ const encryptedStore = createEncryptedStore(config.DATA_ENCRYPTION_KEY);
 
 function id() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
-function escapeWifiQrValue(value) { return String(value ?? '').replace(/([\\;,:\"])/g, '\\$1'); }
-function wifiQrPayload(network) { return `WIFI:T:WPA;S:${escapeWifiQrValue(network.nome)};P:${escapeWifiQrValue(network.senha)};;`; }
-function collaboratorPermissions() { return { demandas: { list: true, create: true, update: false, consult: true, delete: false, scope: 'hospital' }, redes: { list: true, create: false, update: false, consult: true, delete: false }, ramais: { list: true, create: false, update: false, consult: true, delete: false } }; }
-function hospitalOnly(user) { return user.perfil !== 'admin' && Boolean(user.permissions?.demandas); }
-function canViewAllDemands(user) { return user.perfil === 'admin' || user.perfil === 'ti'; }
-function demandBelongsToUser(record, user) { return canViewAllDemands(user) || record.createdBy === user.id || record.solicitanteId === user.id; }
-function attachmentBytes(attachment) { return attachment?.data ? Buffer.byteLength(attachment.data, 'base64') : 0; }
-function interactionForResponse(interaction, includeAttachment = false) { const value = { ...interaction }; if (!includeAttachment && value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
-function demandForResponse(record, includeAttachment = false) { const value = { ...record, interacoes: (record.interacoes || []).map(interaction => interactionForResponse(interaction, includeAttachment)) }; if (!includeAttachment && value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
-function auditSafeRecord(record) { const value = { ...record, interacoes: (record.interacoes || []).map(interaction => interactionForResponse(interaction)) }; if (value.anexoPrint?.data) value.anexoPrint = { mime: value.anexoPrint.mime, hasAttachment: true }; return value; }
 async function assertAttachmentQuota(userId, attachment, replacedBytes = 0) { const usage = await store.attachmentUsageFor(userId); const nextCount = usage.count + (replacedBytes ? 0 : 1), nextBytes = usage.bytes - replacedBytes + attachmentBytes(attachment); if (nextCount > ATTACHMENT_MAX_COUNT || nextBytes > ATTACHMENT_MAX_STORAGE_BYTES) { const sizeMb = Math.round(ATTACHMENT_MAX_STORAGE_BYTES / 1_000_000); const exception = new Error(`Limite de prints atingido: até ${ATTACHMENT_MAX_COUNT} anexos e ${sizeMb} MB por usuário.`); exception.statusCode = 429; throw exception; } }
 function initialData() {
   const admin = config.BOOTSTRAP_ADMIN;
@@ -287,7 +281,6 @@ sanitize = function (values, keys) {
   if (keys === resourceDefinitions.demandas && values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   return sanitizeOriginal(values, keys);
 };
-function sanitizeScreenshot(value) { if (!value) return undefined; const allowed = { 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff', 'image/webp': '52494646' }; if (!allowed[value.mime] || typeof value.data !== 'string' || value.data.length > 6_700_000) return null; const image = Buffer.from(value.data, 'base64'); return image.length && image.length <= 5_000_000 && image.subarray(0, allowed[value.mime].length / 2).toString('hex') === allowed[value.mime] ? { mime: value.mime, data: image.toString('base64') } : null; }
 function sanitizeDemand(values) {
   if (values?.tipo === 'externa') values = { ...values, empresa: 'Hospital Dia Revitalite', contato: values.contato || 'Não informado', email: values.email || 'hospital@revitalite.local', descricao: values.descricao || values.novaObservacao || 'Não informado' };
   const demand = sanitize(values, resourceDefinitions.demandas); if (!demand) return null;
@@ -325,7 +318,6 @@ function sanitizeDemandDetailFields(values, subject) {
   }
   return result;
 }
-function sanitizeChecklist(value) { if (!Array.isArray(value)) return []; return [...new Set(value.filter(item => computerChecklist.includes(item)))]; }
 function sanitizeHospitalDemand(values, user) {
   const text = (value, limit = 250) => repairTextEncoding(String(value || '').trim());
   const demand = { titulo: text(values.titulo), solicitante: user.nome, prioridade: text(values.prioridade), status: 'Aberta', categoria: text(values.categoria), assunto: text(values.assunto), outroDetalhe: text(values.outroDetalhe), tipo: 'externa', descricao: text(values.descricao || values.novaObservacao || 'Não informado', 3000), tecnicoResponsavel: '', prazoSla: '', novaObservacao: text(values.novaObservacao, 3000) };
@@ -340,46 +332,7 @@ function sanitizeHospitalDemand(values, user) {
   }
   return demand;
 }
-function sanitizeOptionalDate(value) { if (value === undefined || value === null || value === '') return ''; const date = String(value).trim(); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null; }
-function normalizeProgramValue(value) { const digits = String(value || '').replace(/\D/g, ''); const cents = Number(digits); return Number.isSafeInteger(cents) && cents > 0 && cents <= 100000000000 ? cents : null; }
 function formatProgramValue(cents) { return (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function automaticSla(priority) { const hours = { 'Crítica': 4, Alta: 24, 'Média': 48, Baixa: 120 }[priority] || 48; return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(); }
-function validateRecordCharacters(resource, payload) {
-  for (const value of Object.values(payload)) if (typeof value === 'string' && /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F<>\uFFFD]/.test(value)) return 'Há caracteres inválidos no cadastro. Revise acentos, símbolos e texto copiado.';
-  if (isAsset(resource)) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{1,49}$/.test(payload.patrimonio)) return 'O patrimônio deve ter de 2 a 50 caracteres: letras, números, ponto, hífen, sublinhado ou barra.';
-    if (resource === 'computadores' && !net.isIP(payload.ip)) return 'Informe um endereço IP válido, por exemplo: 192.168.1.25.';
-  }
-  if (resource === 'computadores' && !/^[\p{L}\p{N}][\p{L}\p{N} .&()/_-]{1,49}$/u.test(payload.grupo)) return 'O grupo possui caracteres inválidos.';
-  if (resource === 'computadores') {
-    const dates = [payload.dataSolicitacao, payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
-    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
-    if (payload.dataSolicitacao && payload.dataRetirada && payload.dataSolicitacao > payload.dataRetirada) return 'A retirada não pode ser anterior à solicitação.';
-    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
-  }
-  if (resource === 'equipamentos') {
-    if (!net.isIP(payload.ip)) return 'Informe um endereço IP válido para localizar o equipamento na rede.';
-    const dates = [payload.dataRetirada, payload.dataDevolucao].filter(Boolean);
-    if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return 'Informe datas válidas.';
-    if (payload.dataRetirada && payload.dataDevolucao && payload.dataRetirada > payload.dataDevolucao) return 'A devolução não pode ser anterior à retirada.';
-  }
-  if (resource === 'ramais' && payload.email && !/^\S+@\S+\.\S+$/.test(payload.email)) return 'Informe um e-mail válido para o ramal.';
-  if (resource === 'programas') {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dataContratacao) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dataRenovacao)) return 'Informe datas válidas para contratação e renovação.';
-    if (payload.dataRenovacao < payload.dataContratacao) return 'A data de renovação não pode ser anterior à contratação.';
-    if (!Number.isSafeInteger(payload.valor) || payload.valor <= 0) return 'Informe um valor válido para o programa.';
-  }
-  return null;
-}
-function isAsset(resource) { return resource === 'computadores' || resource === 'equipamentos'; }
-function assetSituation(resource, record) {
-  const current = String(resource === 'computadores' ? record.status : record.condicao).toLowerCase();
-  if (current.includes('dispon')) return 'Disponível';
-  if (current.includes('manuten')) return 'Em manutenção';
-  if (current.includes('indispon')) return 'Indisponível';
-  return 'Em uso';
-}
-function assetDescription(resource, record) { return resource === 'computadores' ? `Computador · ${record.patrimonio}` : `${record.equipamento} · ${record.categoriaEquipamento || 'Equipamento'}`; }
 async function nextPatrimonyCode() {
   const highest = (await store.records('patrimonio')).reduce((max, item) => {
     const match = String(item.codigo || '').match(/^PAT-(\d+)$/i);
@@ -669,9 +622,9 @@ async function api(req, res, url) {
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
       if (resource === 'demandas' && hospitalOnly(user)) payload.empresa = 'Hospital Dia Revitalite';
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist, computerChecklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
-      const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
+      const characterError = validateRecordCharacters(resource, payload, isAsset); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       const record = { id: id(), ...payload, createdAt: now(), updatedAt: now(), createdBy: user.id, updatedBy: user.id };
@@ -685,9 +638,9 @@ async function api(req, res, url) {
       if (resource === 'demandas' && body.anexoPrint) { const screenshot = sanitizeScreenshot(body.anexoPrint); if (screenshot === null) return error(res, 422, 'Envie somente um print PNG, JPG ou WEBP de até 5 MB.'); const replacedBytes = (previous.anexoPrint?.ownerId || previous.createdBy) === user.id ? attachmentBytes(previous.anexoPrint) : 0; await assertAttachmentQuota(user.id, screenshot, replacedBytes); payload.anexoPrint = { ...screenshot, ownerId: user.id }; }
       if (resource === 'programas') { payload.valor = normalizeProgramValue(body.valor); if (payload.valor === null) return error(res, 422, 'Informe um valor válido para o programa.'); }
       if (resource === 'demandas') payload.prazoSla = automaticSla(payload.prioridade);
-      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
+      if (resource === 'computadores') { payload.checklist = sanitizeChecklist(body.checklist, computerChecklist); payload.dataSolicitacao = sanitizeOptionalDate(body.dataSolicitacao); if (payload.dataSolicitacao === null) return error(res, 422, 'Informe datas válidas.'); }
       if (resource === 'equipamentos') { payload.dataRetirada = sanitizeOptionalDate(body.dataRetirada); payload.dataDevolucao = sanitizeOptionalDate(body.dataDevolucao); if ([payload.dataRetirada, payload.dataDevolucao].includes(null)) return error(res, 422, 'Informe datas válidas.'); }
-      const characterError = validateRecordCharacters(resource, payload); if (characterError) return error(res, 422, characterError);
+      const characterError = validateRecordCharacters(resource, payload, isAsset); if (characterError) return error(res, 422, characterError);
       const codeError = await ensurePatrimonyCodeAvailable(resource, payload, recordId); if (codeError) return error(res, 422, codeError); const serialError = await ensureSerialNumberAvailable(resource, payload, recordId); if (serialError) return error(res, 422, serialError);
       const note = payload.novaObservacao; delete payload.novaObservacao;
       if (resource === 'demandas' && isExclusionDemand(payload)) {
