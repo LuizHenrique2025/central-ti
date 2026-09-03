@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { collaboratorPermissions, demandBelongsToUser } = require('../../server/domain/demand-access');
 const { attachmentBytes, auditSafeRecord, sanitizeScreenshot } = require('../../server/domain/attachments');
 const { wifiQrPayload } = require('../../server/domain/wifi');
@@ -31,4 +33,14 @@ test('regras de Wi-Fi, ativos e cadastros permanecem isoladas e previsíveis', (
   assert.equal(normalizeProgramValue('R$ 1.234,56'), 123456);
   assert.deepEqual(sanitizeChecklist(['Monitor', 'Monitor', 'Outro'], ['Monitor']), ['Monitor']);
   assert.match(validateRecordCharacters('ramais', { email: 'invalido' }, () => false), /e-mail válido/);
+});
+
+test('a interface carrega o recurso de anexos separado da aplicação principal', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const page = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'app.js'), 'utf8');
+  const feature = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'features', 'attachments.js'), 'utf8');
+  assert.match(page, /assets\/js\/features\/attachments\.js/);
+  assert.match(app, /CentralTiAttachments\?\.enhanceCurrentSurface/);
+  assert.match(feature, /function enhanceCurrentSurface/);
 });
