@@ -164,6 +164,15 @@ test('produção falha com proxy não confiável ou host exposto, mesmo com HTTP
   assert.match(exposedHost.stderr, /HOST deve ser um endereço local/);
 });
 
+test('desenvolvimento permite o acesso HTTP pela rede local', () => {
+  const result = spawnSync(process.execPath, ['-e', "require('./server/core/config')"], {
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: { ...process.env, NODE_ENV: 'development', HOST: '0.0.0.0', DATABASE_URL: '', CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64') },
+    encoding: 'utf8'
+  });
+  assert.equal(result.status, 0);
+});
+
 test('2FA limita tentativas entre reemissões e invalida desafio de usuário desativado', async () => {
   const smtpMessages = [];
   const smtpServer = net.createServer(socket => {

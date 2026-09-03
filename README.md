@@ -36,7 +36,7 @@ Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entreg
 
 ### Desenvolvimento na mesma rede
 
-O servidor Node escuta somente em `127.0.0.1`. Para compartilhar o sistema na rede, publique-o por um reverse proxy HTTPS e compartilhe apenas a URL HTTPS do proxy. Não exponha diretamente a porta do Node nem compartilhe URLs HTTP.
+Por padrão, o servidor aceita o acesso pela rede local, usando o endereço exibido no painel, por exemplo `http://192.168.x.x:3000`. O tráfego direto é HTTP; use-o apenas em uma rede interna confiável. Para produção ou acesso fora da rede local, publique a Central TI por um reverse proxy HTTPS e compartilhe apenas a URL HTTPS do proxy.
 
 ## Primeiro administrador
 
