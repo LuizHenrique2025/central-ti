@@ -468,6 +468,29 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ nome: 'Colaborador Pré-cadastrado', cpf: '529.982.247-25', dataNascimento: '1990-05-20', setor: 'Recepção' })
   });
   assert.equal(preRegistration.status, 201);
+  const incompletePreRegistration = await request('/api/users/pre-cadastro', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ nome: 'Cadastro ativado sem credenciais', cpf: '111.444.777-35', dataNascimento: '1988-01-15', setor: 'Laboratório' })
+  });
+  assert.equal(incompletePreRegistration.status, 201);
+  const incompleteUser = (await incompletePreRegistration.json()).user;
+  const accidentalActivation = await request(`/api/users/${incompleteUser.id}/active`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ active: true })
+  });
+  assert.equal(accidentalActivation.status, 200);
+  const reopenedFirstAccess = await request(`/api/users/${incompleteUser.id}/reopen-first-access`, adminToken, { method: 'POST', body: '{}' });
+  assert.equal(reopenedFirstAccess.status, 200);
+  const reopenedUser = (await reopenedFirstAccess.json()).user;
+  assert.equal(reopenedUser.active, false);
+  assert.equal(reopenedUser.activationStatus, 'pre-cadastro');
+  assert.equal(reopenedUser.email, '');
+  assert.equal(reopenedUser.login, '');
+  const restoredFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '111.444.777-35', dataNascimento: '1988-01-15' })
+  });
+  assert.equal(restoredFirstAccess.status, 200);
+  const invalidReopen = await request(`/api/users/${incompleteUser.id}/reopen-first-access`, adminToken, { method: 'POST', body: '{}' });
+  assert.equal(invalidReopen.status, 422);
   const invalidFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-21' })
   });
