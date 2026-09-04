@@ -353,8 +353,10 @@ test('quadro de demandas combina filtros por responsável, usuário e data de ab
 test('catálogo de demandas cobre os motivos recorrentes revisados em produção', () => {
   const configSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/core/config.js'), 'utf8');
   const appSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
-  for (const reason of ['RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'Ligação com falha', 'Novo ramal', 'Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede']) assert.match(configSource, new RegExp(reason));
+  for (const reason of ['RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'Ligação com falha', 'Novo ramal', 'Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede', 'Incluir exames']) assert.match(configSource, new RegExp(reason));
   assert.match(configSource, /'Rede e Internet'/);
+  assert.match(configSource, /Laboratório/);
+  assert.match(configSource, /subjects: \['incluir exames'\]/);
   assert.match(appSource, /function canonicalDemandCategory\(category\)/);
   assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
@@ -603,6 +605,22 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ titulo: 'Incluir procedimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Incluir procedimento', prioridade: 'Média', status: 'Aberta', valorProcedimento: 'R$ 80,00', tuss: '10101012' })
   });
   assert.equal(procedureInclusion.status, 201);
+
+  const incompleteLaboratoryExam = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Incluir exame', solicitante: 'Administrador', tipo: 'interna', categoria: 'Laboratório', assunto: 'Incluir exames', prioridade: 'Média', status: 'Aberta', tuss: '40301010' })
+  });
+  assert.equal(incompleteLaboratoryExam.status, 422);
+
+  const laboratoryExam = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Incluir exame', solicitante: 'Administrador', tipo: 'interna', categoria: 'Laboratório', assunto: 'Incluir exames', prioridade: 'Média', status: 'Aberta', tuss: '40301010', valorProcedimento: 'R$ 125,90', convenio: 'Convênio teste' })
+  });
+  assert.equal(laboratoryExam.status, 201);
+  const laboratoryExamRecord = (await laboratoryExam.json()).record;
+  assert.equal(laboratoryExamRecord.tuss, '40301010');
+  assert.equal(laboratoryExamRecord.valorProcedimento, 'R$ 125,90');
+  assert.equal(laboratoryExamRecord.convenio, 'Convênio teste');
 
   const tableUpdate = await request('/api/resources/demandas', adminToken, {
     method: 'POST',

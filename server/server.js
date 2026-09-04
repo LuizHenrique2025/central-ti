@@ -269,6 +269,7 @@ function demandDetailRequirement(subject) {
   const normalized = String(subject || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (normalized.includes('atualizar taxa') || normalized.includes('atualizar valor de procedimento')) return ['codigoProcedimento', 'convenio', 'valorProcedimento'];
   if (normalized.includes('incluir procedimento')) return ['valorProcedimento', 'tuss'];
+  if (normalized.includes('incluir exames')) return ['tuss', 'valorProcedimento', 'convenio'];
   if (normalized.includes('atualizar tabela')) return ['convenio', 'tabela'];
   return [];
 }
