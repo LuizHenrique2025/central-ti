@@ -468,6 +468,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ nome: 'Colaborador Pré-cadastrado', cpf: '529.982.247-25', dataNascimento: '1990-05-20', setor: 'Recepção' })
   });
   assert.equal(preRegistration.status, 201);
+  const preRegistrationUser = (await preRegistration.json()).user;
   const incompletePreRegistration = await request('/api/users/pre-cadastro', adminToken, {
     method: 'POST',
     body: JSON.stringify({ nome: 'Cadastro ativado sem credenciais', cpf: '111.444.777-35', dataNascimento: '1988-01-15', setor: 'Laboratório' })
@@ -491,12 +492,21 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(restoredFirstAccess.status, 200);
   const invalidReopen = await request(`/api/users/${incompleteUser.id}/reopen-first-access`, adminToken, { method: 'POST', body: '{}' });
   assert.equal(invalidReopen.status, 422);
+  const duplicatePreRegistrationCorrection = await request(`/api/users/${preRegistrationUser.id}/pre-cadastro`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ cpf: '111.444.777-35', dataNascimento: '1990-05-22' })
+  });
+  assert.equal(duplicatePreRegistrationCorrection.status, 409);
+  const correctedPreRegistration = await request(`/api/users/${preRegistrationUser.id}/pre-cadastro`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ cpf: '123.456.789-09', dataNascimento: '1990-05-22' })
+  });
+  assert.equal(correctedPreRegistration.status, 200);
+  assert.equal((await correctedPreRegistration.json()).user.cpfLast4, '8909');
   const invalidFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-21' })
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-20' })
   });
   assert.equal(invalidFirstAccess.status, 401);
   const identifiedFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-20' })
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '123.456.789-09', dataNascimento: '1990-05-22' })
   });
   assert.equal(identifiedFirstAccess.status, 200);
   const firstAccessChallenge = await identifiedFirstAccess.json();
@@ -505,7 +515,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(invalidCompletion.status, 422);
   const completedFirstAccess = await fetch(`${baseUrl}/api/first-access/complete`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-20', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-22', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
   });
   assert.equal(completedFirstAccess.status, 200);
 
