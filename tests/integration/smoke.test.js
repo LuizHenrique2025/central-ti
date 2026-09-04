@@ -326,6 +326,8 @@ test('campos de senha permitem alternar a visualização com controle acessível
   assert.match(source, /Ocultar senha/);
   assert.match(styles, /\.password-visibility-toggle svg/);
   assert.match(styles, /\.password-visibility-toggle:focus-visible/);
+  assert.match(styles, /\.login-card \.password-visibility-toggle \{ color:#26313b/);
+  assert.match(styles, /\.login-card \.password-visibility-toggle\[aria-pressed="true"\] \{ color:#0e4f8a/);
 });
 
 test('quadro de demandas combina filtros por responsável, usuário e data de abertura', () => {
