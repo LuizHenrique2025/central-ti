@@ -2496,6 +2496,9 @@ body:not(.light-theme) .demand-detail-heading span {
 .password-visibility-toggle:hover { color:#fff; background:#ffffff14; }
 .password-visibility-toggle:focus-visible { outline:3px solid #4d9de052; outline-offset:2px; }
 .password-visibility-toggle[aria-pressed="true"] { color:#8fc8ff; background:#3b82f622; }
+.login-card .password-visibility-toggle { color:#26313b; background:#ffffff2e; }
+.login-card .password-visibility-toggle:hover { color:#0d1115; background:#ffffff8f; }
+.login-card .password-visibility-toggle[aria-pressed="true"] { color:#0e4f8a; background:#cfe8ff; }
 .light-theme .password-visibility-toggle { color:#53687b; }
 .light-theme .password-visibility-toggle:hover { color:#1f5f9c; background:#e7f0fa; }
 .light-theme .password-visibility-toggle[aria-pressed="true"] { color:#145990; background:#dcecfb; }
