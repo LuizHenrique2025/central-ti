@@ -2489,6 +2489,17 @@ body:not(.light-theme) .demand-detail-heading span {
 .network-qr-image { display:block; width:min(280px,100%); margin:8px auto 18px; padding:14px; border-radius:12px; background:#fff; box-shadow:0 7px 22px #0002; }
 .network-qr-help { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
 
+.password-input-control { position:relative; display:block; }
+.password-input-control input { width:100%; padding-right:44px!important; }
+.password-visibility-toggle { position:absolute; top:50%; right:8px; display:grid; place-items:center; width:30px; height:30px; padding:0; transform:translateY(-50%); border:0; border-radius:7px; color:#c7d5e2; background:transparent; }
+.password-visibility-toggle svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.8; }
+.password-visibility-toggle:hover { color:#fff; background:#ffffff14; }
+.password-visibility-toggle:focus-visible { outline:3px solid #4d9de052; outline-offset:2px; }
+.password-visibility-toggle[aria-pressed="true"] { color:#8fc8ff; background:#3b82f622; }
+.light-theme .password-visibility-toggle { color:#53687b; }
+.light-theme .password-visibility-toggle:hover { color:#1f5f9c; background:#e7f0fa; }
+.light-theme .password-visibility-toggle[aria-pressed="true"] { color:#145990; background:#dcecfb; }
+
 .demand-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .demand-filters select,
 .demand-date-filter input { max-width:190px; }
