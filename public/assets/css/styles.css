@@ -2488,3 +2488,13 @@ body:not(.light-theme) .demand-detail-heading span {
 .network-qr-modal .modal-intro { margin:4px 0 0; }
 .network-qr-image { display:block; width:min(280px,100%); margin:8px auto 18px; padding:14px; border-radius:12px; background:#fff; box-shadow:0 7px 22px #0002; }
 .network-qr-help { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
+
+.demand-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.demand-filters select,
+.demand-date-filter input { max-width:190px; }
+.demand-date-filter { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; font-weight:700; white-space:nowrap; }
+.demand-date-filter input { min-width:140px; }
+.demand-filter-clear { padding:9px 11px; font-size:12px; white-space:nowrap; }
+body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; border-radius:8px; color:#e9ecef; background:#171a1f; }
+.light-theme .demand-date-filter input { border:1px solid #dce4eb; border-radius:8px; color:#33475b; background:#fff; }
+@media (max-width:760px) { .demand-filters { width:100%; } .demand-filters select,.demand-date-filter input { max-width:none; flex:1 1 170px; } }

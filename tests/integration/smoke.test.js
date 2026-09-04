@@ -316,13 +316,24 @@ test('rascunho de nova demanda mantém a descrição editável', () => {
   assert.doesNotMatch(source, /key === 'descricao' && record \? 'readonly aria-readonly="true"' : ''/);
 });
 
-test('quadro de demandas oferece filtro por responsável e minhas demandas', () => {
+test('quadro de demandas combina filtros por responsável, usuário e data de abertura', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /function matchesDemandAssignee\(record\)/);
+  assert.match(source, /function matchesDemandRequester\(record\)/);
+  assert.match(source, /function matchesDemandCreatedDate\(record\)/);
+  assert.match(source, /function matchesDemandFilters\(record\)/);
+  assert.match(source, /demandCreatedDate\(record\) === state\.demandCreatedDate/);
   assert.match(source, /Minhas demandas/);
   assert.match(source, /Todos os responsáveis/);
+  assert.match(source, /Todos os usuários/);
   assert.match(source, /data-action="demand-assignee-filter"/);
+  assert.match(source, /data-action="demand-requester-filter"/);
+  assert.match(source, /data-action="demand-date-filter"/);
+  assert.match(source, /data-action="clear-demand-filters"/);
   assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
+  assert.match(source, /setDemandRequester\(event\.target\.value\)/);
+  assert.match(source, /setDemandCreatedDate\(event\.target\.value\)/);
+  assert.match(source, /clearDemandFilters\(\)/);
 });
 
 test('catálogo de demandas cobre os motivos recorrentes revisados em produção', () => {
