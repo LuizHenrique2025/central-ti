@@ -316,6 +316,18 @@ test('rascunho de nova demanda mantém a descrição editável', () => {
   assert.doesNotMatch(source, /key === 'descricao' && record \? 'readonly aria-readonly="true"' : ''/);
 });
 
+test('campos de senha permitem alternar a visualização com controle acessível', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/core/bootstrap.js'), 'utf8');
+  const styles = fs.readFileSync(path.resolve(__dirname, '../../public/assets/css/styles.css'), 'utf8');
+  assert.match(source, /input\[type="password"\]:not\(\[data-password-visibility\]\)/);
+  assert.match(source, /password-visibility-toggle/);
+  assert.match(source, /aria-label', 'Mostrar senha'/);
+  assert.match(source, /input\.type = visible \? 'text' : 'password'/);
+  assert.match(source, /Ocultar senha/);
+  assert.match(styles, /\.password-visibility-toggle svg/);
+  assert.match(styles, /\.password-visibility-toggle:focus-visible/);
+});
+
 test('quadro de demandas combina filtros por responsável, usuário e data de abertura', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /function matchesDemandAssignee\(record\)/);
