@@ -2514,6 +2514,85 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-date-filter input { min-width:140px; }
 .demand-filter-clear { padding:9px 11px; font-size:12px; white-space:nowrap; }
 
+/* A faixa de prioridade conduz a triagem; o Kanban segue sendo o espaço de execução. */
+.demand-priority-rail {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+  margin:0 0 24px;
+}
+.demand-priority-group {
+  display:grid;
+  gap:10px;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:var(--ct-radius);
+  background:#171d23;
+}
+.demand-priority-group header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  font-size:12px;
+  font-weight:800;
+}
+.demand-priority-group header b {
+  display:grid;
+  min-width:24px;
+  height:24px;
+  padding-inline:6px;
+  place-items:center;
+  border-radius:999px;
+  font-variant-numeric:tabular-nums;
+  background:#27313b;
+}
+.demand-priority-group > div { display:grid; gap:7px; }
+.demand-priority-item {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:2px 8px;
+  width:100%;
+  min-height:44px;
+  padding:8px 0;
+  text-align:left;
+  color:inherit;
+  background:transparent;
+}
+.demand-priority-item span { grid-row:span 2; color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.demand-priority-item b,.demand-priority-item small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.demand-priority-item b { font-size:12px; }
+.demand-priority-item small { color:var(--muted); font-size:11px; }
+.demand-priority-item:hover b,.demand-priority-item:focus-visible b { text-decoration:underline; text-underline-offset:3px; }
+.demand-priority-item:focus-visible { outline:3px solid var(--ct-blue); outline-offset:3px; border-radius:6px; }
+.demand-priority-more { color:var(--muted); font-size:11px; font-weight:700; }
+.priority-overdue { border-color:#b6535c; }
+.priority-overdue header { color:#ee8d97; }
+.priority-soon { border-color:#a87931; }
+.priority-soon header { color:#e1ae53; }
+.priority-unassigned { border-color:#4d789b; }
+.priority-unassigned header { color:#84bce6; }
+.demand-priority-clear { display:block; padding:13px 0; color:var(--muted); font-size:13px; }
+.kanban-dot.tone-open { background:#3b95e5; }
+.kanban-dot.tone-progress { background:#d99b32; }
+.kanban-dot.tone-completed { background:#24ae81; }
+.kanban-dot.tone-neutral { background:#8090a0; }
+.light-theme .demand-priority-group { background:#fff; }
+.light-theme .demand-priority-group header b { color:#233244; background:#e7edf3; }
+.light-theme .priority-overdue { border-color:#e8b0b5; }
+.light-theme .priority-overdue header { color:#a83d48; }
+.light-theme .priority-soon { border-color:#e5c894; }
+.light-theme .priority-soon header { color:#8b621d; }
+.light-theme .priority-unassigned { border-color:#b3cee3; }
+.light-theme .priority-unassigned header { color:#25618d; }
+@media (max-width:900px) {
+  .demand-priority-rail { grid-template-columns:repeat(3,minmax(230px,1fr)); overflow-x:auto; padding-bottom:4px; scrollbar-gutter:stable; }
+}
+@media (max-width:540px) {
+  .demand-priority-rail { grid-template-columns:1fr; gap:10px; margin-bottom:20px; overflow:visible; }
+  .demand-priority-group { padding:12px; }
+}
+
 /* Navegação por gaveta: preserva a barra lateral no desktop e mantém todos os módulos acessíveis no toque. */
 .mobile-navigation-trigger,
 .mobile-navigation-backdrop {
