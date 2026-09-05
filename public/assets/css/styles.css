@@ -2514,6 +2514,24 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-date-filter input { min-width:140px; }
 .demand-filter-clear { padding:9px 11px; font-size:12px; white-space:nowrap; }
 
+/* Cada coluna controla sua própria rolagem vertical; o quadro só rola lateralmente. */
+.content > .kanban {
+  overflow-x:auto;
+  overflow-y:hidden;
+  align-items:stretch;
+}
+.content > .kanban .kanban-column {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+}
+.content > .kanban .kanban-cards {
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding-right:4px;
+}
+
 /* A faixa de prioridade conduz a triagem; o Kanban segue sendo o espaço de execução. */
 .demand-priority-rail {
   display:grid;
