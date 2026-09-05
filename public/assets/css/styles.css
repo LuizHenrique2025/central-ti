@@ -1459,7 +1459,11 @@ body:not(.light-theme) .dial-extension { color:#e7ebee; border-color:#4a5058; ba
 body:not(.light-theme) .dial-extension:hover:not(:disabled) { color:#111317; border-color:#dce1e5; background:#dce1e5; }
 .card-details { padding:6px 9px; border:1px solid #4a5058; border-radius:6px; color:#d9dde1; background:#30353b; font-size:10px; font-weight:800; }
 .card-details:hover { color:#111317; background:#d9dde1; }
+.demand-card-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; min-width:0; }
+.form-error { margin:14px 0 0; padding:10px 12px; border:1px solid #9d4e57; border-radius:8px; color:#ffd0d4; background:#4a252b; font-size:13px; line-height:1.4; }
+.form-error:focus { outline:3px solid #f18a94; outline-offset:2px; }
 .light-theme .card-details { color:#354355; background:#edf1f5; border-color:#d4dbe3; }
+.light-theme .form-error { border-color:#e7a8ae; color:#902e38; background:#fff1f2; }
 .light-theme .ticket-comment p { background:#f4f6f8; }
 .light-theme .ticket-comment.mine p { background:#e9edf1; }
 .light-theme .ticket-reply textarea { color:#172b43; background:#fff; border-color:#ccd4dd; }
