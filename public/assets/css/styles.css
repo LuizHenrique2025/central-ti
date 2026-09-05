@@ -2514,6 +2514,19 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-date-filter input { min-width:140px; }
 .demand-filter-clear { padding:9px 11px; font-size:12px; white-space:nowrap; }
 
+/* Alertas resumidos evitam repetir cartões antes do Kanban. */
+.demand-priority-rail { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
+.demand-priority-group { display:flex; padding:0; border:0; background:transparent; }
+.demand-priority-group > div { display:none; }
+.demand-priority-group header { min-height:36px; padding:0 10px; border:1px solid var(--line); border-radius:8px; gap:8px; }
+.demand-priority-group header b { min-width:20px; height:20px; padding:0 5px; }
+.demand-priority-clear { margin:0 0 14px; padding:0; }
+.demand-filters { align-items:end; gap:10px; }
+.demand-filter-field { display:grid; gap:5px; color:var(--muted); font-size:11px; font-weight:700; }
+.demand-filter-field select,.demand-filter-field input { width:180px; max-width:100%; min-height:36px; }
+.demand-date-filter { white-space:normal; }
+@media (max-width:760px) { .demand-filter-field { flex:1 1 160px; } .demand-filter-field select,.demand-filter-field input { width:100%; } }
+
 /* A faixa de prioridade conduz a triagem; o Kanban segue sendo o espaço de execução. */
 .demand-priority-rail {
   display:grid;
