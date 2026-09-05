@@ -2526,6 +2526,23 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-filter-field select,.demand-filter-field input { width:180px; max-width:100%; min-height:36px; }
 .demand-date-filter { white-space:normal; }
 @media (max-width:760px) { .demand-filter-field { flex:1 1 160px; } .demand-filter-field select,.demand-filter-field input { width:100%; } }
+/* Cada coluna controla sua própria rolagem vertical; o quadro só rola lateralmente. */
+.content > .kanban {
+  overflow-x:auto;
+  overflow-y:hidden;
+  align-items:stretch;
+}
+.content > .kanban .kanban-column {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+}
+.content > .kanban .kanban-cards {
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding-right:4px;
+}
 
 /* A faixa de prioridade conduz a triagem; o Kanban segue sendo o espaço de execução. */
 .demand-priority-rail {
