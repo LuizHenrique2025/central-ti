@@ -2513,6 +2513,73 @@ body:not(.light-theme) .demand-detail-heading span {
 .demand-date-filter { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; font-weight:700; white-space:nowrap; }
 .demand-date-filter input { min-width:140px; }
 .demand-filter-clear { padding:9px 11px; font-size:12px; white-space:nowrap; }
+
+/* Navegação por gaveta: preserva a barra lateral no desktop e mantém todos os módulos acessíveis no toque. */
+.mobile-navigation-trigger,
+.mobile-navigation-backdrop {
+  display:none;
+}
+@media (max-width:540px) {
+  .shell { position:relative; }
+  .topbar { align-items:center; gap:16px; }
+  .mobile-navigation-trigger {
+    display:grid;
+    flex:0 0 44px;
+    width:44px;
+    height:44px;
+    padding:11px;
+    gap:4px;
+    place-content:center;
+    border:1px solid var(--line);
+    border-radius:8px;
+    color:var(--ink);
+    background:var(--panel, #fff);
+  }
+  .mobile-navigation-trigger span {
+    display:block;
+    width:20px;
+    height:2px;
+    border-radius:2px;
+    background:currentColor;
+  }
+  .mobile-navigation-trigger:focus-visible,
+  .mobile-navigation-backdrop:focus-visible {
+    outline:3px solid var(--ct-blue);
+    outline-offset:3px;
+  }
+  .mobile-navigation-backdrop {
+    display:block;
+    position:fixed;
+    inset:0;
+    z-index:69;
+    border:0;
+    background:#030405a8;
+    cursor:pointer;
+  }
+  .sidebar.mobile-navigation-open {
+    display:flex;
+    position:fixed;
+    z-index:70;
+    inset:0 auto 0 0;
+    width:min(320px,86vw);
+    padding:calc(20px + env(safe-area-inset-top)) 14px max(20px, env(safe-area-inset-bottom));
+    box-shadow:18px 0 42px #0009;
+    overscroll-behavior:contain;
+  }
+  .sidebar.mobile-navigation-open .brand-lockup span,
+  .sidebar.mobile-navigation-open .nav .label,
+  .sidebar.mobile-navigation-open .nav-section,
+  .sidebar.mobile-navigation-open .user-box > div:not(.avatar),
+  .sidebar.mobile-navigation-open .logout {
+    display:block;
+  }
+  .sidebar.mobile-navigation-open .brand-lockup { justify-content:flex-start; padding-inline:11px; }
+  .sidebar.mobile-navigation-open .nav button { justify-content:flex-start; min-height:44px; }
+  .sidebar.mobile-navigation-open .nav .nav-icon { width:18px; }
+  .sidebar.mobile-navigation-open .user-box { justify-content:flex-start; padding-inline:11px; }
+  .sidebar.mobile-navigation-open .avatar { display:grid; }
+  .sidebar.mobile-navigation-open .logout { margin-left:auto; }
+}
 body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; border-radius:8px; color:#e9ecef; background:#171a1f; }
 .light-theme .demand-date-filter input { border:1px solid #dce4eb; border-radius:8px; color:#33475b; background:#fff; }
 @media (max-width:760px) { .demand-filters { width:100%; } .demand-filters select,.demand-date-filter input { max-width:none; flex:1 1 170px; } }

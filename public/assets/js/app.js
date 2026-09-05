@@ -15,6 +15,8 @@ let pendingAction = null;
 let knownUnreadMessageIds = null;
 let modalOpener = null;
 let sidebarCollapsed = localStorage.getItem('central-ti-sidebar-collapsed') === 'true';
+let mobileNavigationOpen = false;
+let mobileNavigationOpener = null;
 let colorTheme = localStorage.getItem('central-ti-theme') === 'light' ? 'light' : 'dark';
 const esc = escapeAttribute;
 const formatDate = value => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
@@ -71,6 +73,8 @@ document.addEventListener('click', event => {
   if (!control || control.disabled) return;
   switch (control.dataset.action) {
     case 'go': return go(control.dataset.page);
+    case 'open-mobile-navigation': return openMobileNavigation(control);
+    case 'close-mobile-navigation': return closeMobileNavigation();
     case 'logout': return logout();
     case 'search': return control.matches('button') ? setSearch(control.dataset.searchTerm || '') : undefined;
     case 'demand-details': return openDemandDetails(control.dataset.demandId);
@@ -142,8 +146,8 @@ function demandEmptyState(cards, statusCards) {
   return 'Nenhuma demanda neste status.';
 }
 function nav(id, label, icon, count = 0) { return `<button class="${state.page === id ? 'active' : ''}" data-action="go" data-page="${esc(id)}"><span class="nav-icon">${icon}</span><span class="label">${label}</span>${count ? `<b class="nav-badge" style="margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:grid;place-items:center;background:#ef5a62;color:#fff;font-size:10px;line-height:1">${count > 99 ? '99+' : count}</b>` : ''}</button>`; }
-function sidebar() { const links = Object.entries(modules).filter(([id]) => id !== 'demandas' && id !== 'computadores' && isModuleEnabled(id) && canRead(id)).map(([id, module]) => nav(id, module.name, module.icon)).join(''); const demandLinks = canRead('demandas') ? (state.user?.perfil === 'admin' ? `${nav('demandas-internas', 'Demandas Internas (T.I.)', '✓')}${nav('demandas-externas', 'Demandas Hospital', '✓')}` : nav('demandas-externas', 'Demandas Hospital', '✓')) : ''; return `<aside class="sidebar"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><nav class="nav"><div class="nav-section">PAINEL</div>${nav('dashboard', 'Visão geral', '⌘')}${state.user?.perfil === 'admin' ? nav('relatorios', 'Relatórios', '▤') : ''}${canRead('equipamentos') ? nav('localizacao', 'Localizar equipamentos', '⌖') : ''}<div class="nav-section">GESTÃO</div>${demandLinks}${links}${state.user.perfil === 'admin' ? `<div class="nav-section">ACESSOS</div>${nav('usuarios', 'Usuários', '♙')}` : ''}<div class="nav-section">COMUNICAÇÃO</div>${nav('email', 'E-mail interno', '✉', state.unreadMessages)}</nav><div class="user-box"><div class="avatar">${esc(state.user.nome.slice(0, 2).toUpperCase())}</div><div><div class="user-name">${esc(state.user.nome)}</div><div class="user-role">${esc(role(state.user.perfil))}</div></div><button class="logout" data-action="logout">↪</button></div></aside>`; }
-function header(title, subtitle) { return `<div class="topbar"><div><div class="eyebrow">${esc(subtitle || 'Central TI')}</div><h1 class="page-title">${esc(title)}</h1></div></div>`; }
+function sidebar() { const links = Object.entries(modules).filter(([id]) => id !== 'demandas' && id !== 'computadores' && isModuleEnabled(id) && canRead(id)).map(([id, module]) => nav(id, module.name, module.icon)).join(''); const demandLinks = canRead('demandas') ? (state.user?.perfil === 'admin' ? `${nav('demandas-internas', 'Demandas Internas (T.I.)', '✓')}${nav('demandas-externas', 'Demandas Hospital', '✓')}` : nav('demandas-externas', 'Demandas Hospital', '✓')) : ''; return `${mobileNavigationOpen ? '<button class="mobile-navigation-backdrop" data-action="close-mobile-navigation" aria-label="Fechar menu"></button>' : ''}<aside id="primary-navigation" class="sidebar${mobileNavigationOpen ? ' mobile-navigation-open' : ''}"><div class="brand-lockup"><div class="brand-mark">✦</div><span>Central TI</span></div><nav class="nav" aria-label="Navegação principal"><div class="nav-section">PAINEL</div>${nav('dashboard', 'Visão geral', '⌘')}${state.user?.perfil === 'admin' ? nav('relatorios', 'Relatórios', '▤') : ''}${canRead('equipamentos') ? nav('localizacao', 'Localizar equipamentos', '⌖') : ''}<div class="nav-section">GESTÃO</div>${demandLinks}${links}${state.user.perfil === 'admin' ? `<div class="nav-section">ACESSOS</div>${nav('usuarios', 'Usuários', '♙')}` : ''}<div class="nav-section">COMUNICAÇÃO</div>${nav('email', 'E-mail interno', '✉', state.unreadMessages)}</nav><div class="user-box"><div class="avatar">${esc(state.user.nome.slice(0, 2).toUpperCase())}</div><div><div class="user-name">${esc(state.user.nome)}</div><div class="user-role">${esc(role(state.user.perfil))}</div></div><button class="logout" data-action="logout">↪</button></div></aside>`; }
+function header(title, subtitle) { return `<div class="topbar"><div class="page-heading"><div class="eyebrow">${esc(subtitle || 'Central TI')}</div><h1 class="page-title">${esc(title)}</h1></div><button class="mobile-navigation-trigger" type="button" data-action="open-mobile-navigation" aria-label="Abrir menu" aria-controls="primary-navigation" aria-expanded="${mobileNavigationOpen}"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button></div>`; }
 function dashboard() { const d = state.dashboard || { notifications: [], announcements: [], activeCount: 0, openDemands: 0, inbox: 0 }, notifications = d.notifications || []; return `${header('Visão geral', `Olá, ${state.user.nome}`)}<section class="metrics">${[['Ativos cadastrados', d.activeCount, '▣'], ['Demandas abertas', d.openDemands, '✓'], ['Alertas técnicos', notifications.length, '⚠'], ['Mensagens não lidas', d.inbox, '✉']].map(item => `<div class="metric"><div class="metric-head"><div class="metric-name">${item[0]}</div><div class="metric-icon">${item[2]}</div></div><div class="metric-number">${item[1]}</div></div>`).join('')}</section>${notifications.length ? `<section class="dashboard-grid"><div class="panel"><div class="panel-heading"><div><h3>Notificações técnicas</h3><div class="panel-subtitle">Itens que exigem atenção</div></div></div><div class="demand-list">${notifications.map(note => `<div class="demand"><span class="status ${note.avaliacao === 'Troca necessária' ? 'critical' : 'wait'}"></span><div><div class="demand-title">${esc(note.titulo)} · ${tag(note.avaliacao)}</div><div class="demand-meta">${esc(note.detalhe)}</div></div></div>`).join('')}</div></div><div class="panel"><div class="panel-heading"><div><h3>Acesso pela rede</h3><div class="panel-subtitle">Compartilhe com sua equipe</div></div></div><div class="network-box">${state.networkUrls.map(url => `<code>${esc(url)}</code>`).join('') || 'Endereço não identificado.'}<p>Os dados são compartilhados entre todos os usuários da Central TI.</p></div></div></section>` : ''}<section class="panel announcements"><div class="panel-heading"><div><h3>Comunicados da T.I.</h3><div class="panel-subtitle">Informações importantes para todos os usuários</div></div>${state.user?.perfil === 'admin' ? '<button class="add-record" onclick="openAnnouncement()">+ Comunicado</button>' : ''}</div><div class="announcement-list">${(d.announcements || []).map(item => `<article class="announcement"><div><h4>${esc(item.title)}</h4><p>${esc(item.body).replace(/\n/g, '<br/>')}</p><small>Por ${esc(item.authorName)} · ${formatDate(item.createdAt)}</small></div>${state.user?.perfil === 'admin' ? `<button class="danger-link" onclick="deleteAnnouncement('${item.id}')">Remover</button>` : ''}</article>`).join('') || '<div class="empty">Nenhum comunicado publicado.</div>'}</div></section>`; }
 function locationPage() { const data = state.locations || { groups: [], records: [] }; const records = data.records.filter(record => Object.values(record).join(' ').toLowerCase().includes(state.query.toLowerCase())); return `${header('Localizar equipamentos', 'Busca por IP, patrimônio, subgrupo ou setor')}<div class="section-toolbar"><input class="search" value="${esc(state.query)}" data-action="search" placeholder="Ex.: 192.168.2.25, PC-0048 ou Computador"/></div><section class="location-groups">${data.groups.map(item => `<button data-action="search" data-search-term="${esc(item.group)}"><b>${esc(item.group)}</b><span>${item.total} item(ns)</span></button>`).join('')}</section><div class="panel table-panel">${records.length ? `<table class="data-table"><thead><tr><th>Patrimônio</th><th>IP</th><th>Subgrupo</th><th>Localização</th><th>Responsável</th><th>Status</th></tr></thead><tbody>${records.map(record => `<tr><td><b>${esc(record.patrimonio)}</b></td><td><code>${esc(record.ip)}</code></td><td>${tag(record.grupo)}</td><td>${esc(record.localizacao)}</td><td>${esc(record.responsavel)}</td><td>${tag(record.status)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nenhum equipamento encontrado.</div>'}</div>`; }
 function matchesDemandSearch(record) { const query = normalizeDemandText(state.query); if (!query) return true; return [record.ticket, record.titulo, record.solicitante, record.categoria, record.assunto, record.tecnicoResponsavel, record.empresa].some(value => normalizeDemandText(value).includes(query)); }
@@ -464,6 +468,20 @@ document.addEventListener('keydown', event => {
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
+document.addEventListener('keydown', event => {
+  if (!mobileNavigationOpen) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMobileNavigation();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...document.querySelectorAll('.sidebar.mobile-navigation-open a[href], .sidebar.mobile-navigation-open button:not([disabled]), .sidebar.mobile-navigation-open [tabindex]:not([tabindex="-1"])')].filter(element => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
 function render({ preserveScroll = false } = {}) { if (closingModal) return; const previousContent = preserveScroll ? document.querySelector('#app .content') : null; const scrollTop = previousContent?.scrollTop || 0; const hadModal = Boolean(document.querySelector('.modal-backdrop')); if (state.modal && !hadModal) modalOpener = document.activeElement; if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); return; } const page = state.loading ? `<div class="loading-skeleton">${loadingPage()}</div>` : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : !isModuleEnabled(state.page) ? moduleDisabledPage(state.page) : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; if (preserveScroll) document.querySelector('#app .content')?.scrollTo({ top: scrollTop }); enhanceCurrentSurface(); setupModalAccessibility(); }
 function loadingPage() {
   const pages = {
@@ -571,6 +589,7 @@ async function load(options = {}) {
 }
 async function go(page) {
   const requestId = ++navigationRequest;
+  mobileNavigationOpen = false;
   state.page = page;
   state.query = '';
   state.modal = null;
@@ -911,6 +930,24 @@ function toggleSidebar() {
   localStorage.setItem('central-ti-sidebar-collapsed', String(sidebarCollapsed));
   applySidebarChrome();
 }
+function openMobileNavigation(opener) {
+  mobileNavigationOpener = opener;
+  mobileNavigationOpen = true;
+  render({ preserveScroll: true });
+  requestAnimationFrame(() => document.querySelector('.sidebar .nav [data-action="go"]')?.focus());
+}
+function closeMobileNavigation() {
+  mobileNavigationOpen = false;
+  render({ preserveScroll: true });
+  if (mobileNavigationOpener?.isConnected) requestAnimationFrame(() => mobileNavigationOpener.focus());
+  mobileNavigationOpener = null;
+}
+window.addEventListener('resize', () => {
+  if (mobileNavigationOpen && window.matchMedia('(min-width: 541px)').matches) {
+    mobileNavigationOpen = false;
+    render({ preserveScroll: true });
+  }
+});
 function toggleColorTheme() {
   colorTheme = colorTheme === 'dark' ? 'light' : 'dark';
   localStorage.setItem('central-ti-theme', colorTheme);
