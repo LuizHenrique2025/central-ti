@@ -330,7 +330,7 @@ test('campos de senha permitem alternar a visualização com controle acessível
   assert.match(styles, /\.login-card \.password-visibility-toggle\[aria-pressed="true"\] \{ color:#0e4f8a/);
 });
 
-test('quadro de demandas combina filtros por responsável, usuário e data de abertura', () => {
+test('quadro de demandas combina filtros por responsável, solicitante e data de abertura', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /function matchesDemandAssignee\(record\)/);
   assert.match(source, /function matchesDemandRequester\(record\)/);
@@ -339,7 +339,7 @@ test('quadro de demandas combina filtros por responsável, usuário e data de ab
   assert.match(source, /demandCreatedDate\(record\) === state\.demandCreatedDate/);
   assert.match(source, /Minhas demandas/);
   assert.match(source, /Todos os responsáveis/);
-  assert.match(source, /Todos os usuários/);
+  assert.match(source, /Todos os solicitantes/);
   assert.match(source, /data-action="demand-assignee-filter"/);
   assert.match(source, /data-action="demand-requester-filter"/);
   assert.match(source, /data-action="demand-date-filter"/);
