@@ -2692,3 +2692,10 @@ body:not(.light-theme) .demand-detail-heading span {
 body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; border-radius:8px; color:#e9ecef; background:#171a1f; }
 .light-theme .demand-date-filter input { border:1px solid #dce4eb; border-radius:8px; color:#33475b; background:#fff; }
 @media (max-width:760px) { .demand-filters { width:100%; } .demand-filters select,.demand-date-filter input { max-width:none; flex:1 1 170px; } }
+
+/* Ordem final dos alertas compactos. */
+.demand-priority-rail { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
+.demand-priority-group { display:flex; padding:0; border:0; background:transparent; }
+.demand-priority-group > div { display:none; }
+.demand-priority-group header { min-height:36px; padding:0 10px; border:1px solid var(--line); border-radius:8px; gap:8px; }
+.demand-priority-group header b { min-width:20px; height:20px; padding:0 5px; }
