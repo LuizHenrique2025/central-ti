@@ -791,12 +791,12 @@ button { cursor:pointer; border:0; }
 
 /* Tema unificado grafite e prata do ambiente autenticado. */
 :root {
-  --ink:#edf0f3;
-  --muted:#9ba3ad;
-  --line:#343a42;
-  --bg:#0d0f12;
-  --blue:#b9c0c8;
-  --navy:#111317;
+  --ink:#edf1f5;
+  --muted:#8b96a3;
+  --line:#2a3038;
+  --bg:#0b0e13;
+  --blue:#3b82f6;
+  --navy:#0f141c;
 }
 body {
   color:var(--ink);
