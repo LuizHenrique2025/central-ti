@@ -2098,6 +2098,8 @@ body:not(.light-theme) .demand-detail-heading span {
 .overview-bar b {
   position: absolute;
   top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
   color: var(--ink);
   font-size: .82rem;
 }
