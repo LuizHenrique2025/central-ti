@@ -27,6 +27,34 @@ function applyPasswordMinimum() {
   document.querySelectorAll('input[name="senha"], input[name="newPassword"]').forEach(input => {
     input.minLength = 8;
   });
+  document.querySelectorAll('input[type="password"]:not([data-password-visibility])').forEach(input => {
+    input.dataset.passwordVisibility = 'ready';
+    const wrapper = document.createElement('span');
+    wrapper.className = 'password-input-control';
+    input.before(wrapper);
+    wrapper.append(input);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'password-visibility-toggle';
+    button.setAttribute('aria-label', 'Mostrar senha');
+    button.setAttribute('aria-pressed', 'false');
+    button.title = 'Mostrar senha';
+    const updateVisibilityToggle = visible => {
+      button.setAttribute('aria-label', visible ? 'Ocultar senha' : 'Mostrar senha');
+      button.setAttribute('aria-pressed', String(visible));
+      button.title = visible ? 'Ocultar senha' : 'Mostrar senha';
+      button.innerHTML = visible
+        ? '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.7 10.7 0 0 1 12 4.9c6.5 0 10 7.1 10 7.1a18.5 18.5 0 0 1-3.1 4.1M6.2 6.2C3.6 8.1 2 12 2 12s3.5 7.1 10 7.1c1.2 0 2.3-.2 3.3-.6"/></svg>'
+        : '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7.1 10-7.1S22 12 22 12s-3.5 7.1-10 7.1S2 12 2 12Zm13 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>';
+    };
+    updateVisibilityToggle(false);
+    button.addEventListener('click', () => {
+      const visible = input.type === 'password';
+      input.type = visible ? 'text' : 'password';
+      updateVisibilityToggle(visible);
+    });
+    wrapper.append(button);
+  });
   const loginForm = document.querySelector('.login-card[onsubmit="authenticate(event)"]');
   const passwordField = loginForm?.querySelector('input[name="password"]')?.closest('.field');
   if (passwordField && !loginForm.querySelector('.forgot-password')) {

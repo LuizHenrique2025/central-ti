@@ -18,6 +18,7 @@ const DEMAND_CATEGORIES = {
   'Impressão': ['Toner', 'Etiqueta'],
   Telefonia: ['Telefones', 'Ramais', 'MicroSIP', 'Ligação com falha', 'Novo ramal'],
   'Rede e Internet': ['Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede'],
+  Laboratório: ['Incluir exames'],
   Outros: []
 };
 
@@ -27,6 +28,7 @@ const EXCLUSION_REASON_CATEGORIES = ['Atendimento duplicado', 'Paciente incorret
 const DEMAND_DETAIL_RULES = [
   { subjects: ['atualizar taxa', 'atualizar valor de procedimento'], title: 'Dados para atualização', fields: [['codigoProcedimento', 'Código do procedimento', 'Ex.: 10101012'], ['convenio', 'Convênio', 'Informe o convênio'], ['valorProcedimento', 'Valor', 'R$ 0,00']] },
   { subjects: ['incluir procedimento'], title: 'Dados do procedimento', fields: [['valorProcedimento', 'Valor', 'R$ 0,00'], ['tuss', 'TUSS', 'Código TUSS']] },
+  { subjects: ['incluir exames'], title: 'Dados do exame', fields: [['tuss', 'TUSS', 'Código TUSS'], ['valorProcedimento', 'Valor', 'R$ 0,00'], ['convenio', 'Convênio', 'Informe o convênio']] },
   { subjects: ['atualizar tabela'], title: 'Dados da tabela', fields: [['convenio', 'Convênio', 'Informe o convênio'], ['tabela', 'Tabela', 'Informe a tabela']] }
 ];
 const RAMAL_SECTORS = ['Administrativo', 'Atendimento', 'Auditoria', 'Centro Cirúrgico', 'Compras', 'Contabilidade', 'Enfermagem', 'Farmácia', 'Faturamento', 'Financeiro', 'Internação', 'Laboratório', 'Recepção', 'Recursos Humanos', 'T.I.', 'Tomografia', 'Raio X', 'Outros'];

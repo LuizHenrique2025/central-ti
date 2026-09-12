@@ -118,6 +118,7 @@ test('modo de produção rejeita HTTP direto e aceita somente o proxy HTTPS conf
       ...process.env,
       NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port),
       CENTRAL_TI_DATA_DIR: path.join(root, 'storage'), BACKUP_DIR: path.join(root, 'backups'),
+      CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'),
       CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: 'Administrador HTTPS',
       CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: `https-${crypto.randomUUID()}@centralti.test`,
       CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: `Https!${crypto.randomBytes(18).toString('hex')}`,
@@ -163,6 +164,125 @@ test('produção falha com proxy não confiável ou host exposto, mesmo com HTTP
   assert.match(exposedHost.stderr, /HOST deve ser um endereço local/);
 });
 
+test('desenvolvimento permite o acesso HTTP pela rede local', () => {
+  const result = spawnSync(process.execPath, ['-e', "require('./server/core/config')"], {
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: { ...process.env, NODE_ENV: 'development', HOST: '0.0.0.0', DATABASE_URL: '', CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64') },
+    encoding: 'utf8'
+  });
+  assert.equal(result.status, 0);
+});
+
+test('2FA limita tentativas entre reemissões e invalida desafio de usuário desativado', async () => {
+  const smtpMessages = [];
+  const smtpServer = net.createServer(socket => {
+    let buffer = '';
+    let receivingMessage = false;
+    socket.setEncoding('utf8');
+    socket.write('220 localhost Central TI test SMTP\r\n');
+    socket.on('data', chunk => {
+      buffer += chunk;
+      while (buffer) {
+        if (receivingMessage) {
+          const end = buffer.indexOf('\r\n.\r\n');
+          if (end === -1) return;
+          smtpMessages.push(buffer.slice(0, end));
+          buffer = buffer.slice(end + 5);
+          receivingMessage = false;
+          socket.write('250 Message accepted\r\n');
+          continue;
+        }
+        const lineEnd = buffer.indexOf('\r\n');
+        if (lineEnd === -1) return;
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 2);
+        if (/^EHLO\b/i.test(line)) socket.write('250-localhost\r\n250 AUTH PLAIN LOGIN\r\n');
+        else if (/^AUTH\b/i.test(line)) socket.write('235 Authentication successful\r\n');
+        else if (/^(MAIL FROM|RCPT TO)\b/i.test(line)) socket.write('250 OK\r\n');
+        else if (/^DATA$/i.test(line)) { receivingMessage = true; socket.write('354 End data with <CR><LF>.<CR><LF>\r\n'); }
+        else if (/^QUIT$/i.test(line)) { socket.end('221 Bye\r\n'); return; }
+        else socket.write('250 OK\r\n');
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    smtpServer.once('error', reject);
+    smtpServer.listen(0, '127.0.0.1', resolve);
+  });
+  const smtpPort = smtpServer.address().port;
+  const port = await freePort();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'central-ti-2fa-test-'));
+  const adminEmail = `2fa-admin-${crypto.randomUUID()}@centralti.test`;
+  const adminPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const newAdminPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const targetPassword = `2Fa!${crypto.randomBytes(18).toString('hex')}`;
+  const childProcess = spawn(process.execPath, ['server/server.js'], {
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: {
+      ...process.env,
+      HOST: '127.0.0.1', PORT: String(port), CENTRAL_TI_DATA_DIR: path.join(root, 'storage'), BACKUP_DIR: path.join(root, 'backups'),
+      CENTRAL_TI_DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'), DATABASE_URL: '', EMAIL_2FA_REQUIRED: 'true',
+      SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), SMTP_SECURE: 'false', SMTP_USER: 'test-user', SMTP_PASS: crypto.randomBytes(18).toString('hex'), MAIL_FROM: 'test@centralti.local',
+      CENTRAL_TI_BOOTSTRAP_ADMIN_NAME: 'Administrador 2FA', CENTRAL_TI_BOOTSTRAP_ADMIN_EMAIL: adminEmail, CENTRAL_TI_BOOTSTRAP_ADMIN_PASSWORD: adminPassword
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  const url = `http://127.0.0.1:${port}`;
+  const waitForMessage = async count => {
+    const deadline = Date.now() + 5000;
+    while (smtpMessages.length < count && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(smtpMessages.length >= count, 'O servidor SMTP de teste não recebeu o código.');
+    const match = smtpMessages.at(-1).match(/\b(\d{6})\b/);
+    assert.ok(match, 'O e-mail de teste não contém um código de seis dígitos.');
+    return match[1];
+  };
+  const post = async (pathname, body, token) => fetch(`${url}${pathname}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  try {
+    await waitForServer(url);
+    const adminLogin = await post('/api/auth/login', { email: adminEmail, password: adminPassword });
+    assert.equal(adminLogin.status, 200);
+    const adminChallenge = await adminLogin.json();
+    const adminCode = await waitForMessage(1);
+    const adminVerified = await post('/api/auth/verify-email', { verificationToken: adminChallenge.verificationToken, code: adminCode });
+    assert.equal(adminVerified.status, 200);
+    const adminToken = (await adminVerified.json()).token;
+    assert.equal((await post('/api/auth/change-password', { currentPassword: adminPassword, newPassword: newAdminPassword }, adminToken)).status, 200);
+
+    const createUser = await post('/api/users', { nome: 'Usuário 2FA', email: 'usuario-2fa@centralti.local', perfil: 'consulta', senha: targetPassword, permissions: {} }, adminToken);
+    assert.equal(createUser.status, 201);
+    const targetUser = (await createUser.json()).user;
+
+    const targetLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    assert.equal(targetLogin.status, 200);
+    const targetChallenge = await targetLogin.json();
+    const targetCode = await waitForMessage(2);
+    const deactivate = await fetch(`${url}/api/users/${targetUser.id}/active`, { method: 'PUT', headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ active: false }) });
+    assert.equal(deactivate.status, 200);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: targetChallenge.verificationToken, code: targetCode })).status, 401);
+
+    const reactivate = await fetch(`${url}/api/users/${targetUser.id}/active`, { method: 'PUT', headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ active: true }) });
+    assert.equal(reactivate.status, 200);
+    const firstLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    const firstChallenge = await firstLogin.json();
+    await waitForMessage(3);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: firstChallenge.verificationToken, code: '000000' })).status, 401);
+    const renewedLogin = await post('/api/auth/login', { email: targetUser.email, password: targetPassword });
+    assert.equal(renewedLogin.status, 200);
+    const renewedChallenge = await renewedLogin.json();
+    await waitForMessage(4);
+    assert.equal((await post('/api/auth/verify-email', { verificationToken: firstChallenge.verificationToken, code: '000000' })).status, 401);
+    for (let index = 0; index < 4; index += 1) assert.equal((await post('/api/auth/verify-email', { verificationToken: renewedChallenge.verificationToken, code: '000000' })).status, 401);
+    assert.equal((await post('/api/auth/login', { email: targetUser.email, password: targetPassword })).status, 429);
+  } finally {
+    if (childProcess.exitCode === null) {
+      childProcess.kill();
+      await new Promise(resolve => childProcess.once('exit', resolve));
+    }
+    await new Promise(resolve => smtpServer.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('payloads XSS armazenados permanecem valores de atributo, não handlers executáveis', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   const { escapeAttribute } = require('../../public/assets/js/core/safe-render');
@@ -196,20 +316,47 @@ test('rascunho de nova demanda mantém a descrição editável', () => {
   assert.doesNotMatch(source, /key === 'descricao' && record \? 'readonly aria-readonly="true"' : ''/);
 });
 
-test('quadro de demandas oferece filtro por responsável e minhas demandas', () => {
+test('campos de senha permitem alternar a visualização com controle acessível', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/core/bootstrap.js'), 'utf8');
+  const styles = fs.readFileSync(path.resolve(__dirname, '../../public/assets/css/styles.css'), 'utf8');
+  assert.match(source, /input\[type="password"\]:not\(\[data-password-visibility\]\)/);
+  assert.match(source, /password-visibility-toggle/);
+  assert.match(source, /aria-label', 'Mostrar senha'/);
+  assert.match(source, /input\.type = visible \? 'text' : 'password'/);
+  assert.match(source, /Ocultar senha/);
+  assert.match(styles, /\.password-visibility-toggle svg/);
+  assert.match(styles, /\.password-visibility-toggle:focus-visible/);
+  assert.match(styles, /\.login-card \.password-visibility-toggle \{ color:#26313b/);
+  assert.match(styles, /\.login-card \.password-visibility-toggle\[aria-pressed="true"\] \{ color:#0e4f8a/);
+});
+
+test('quadro de demandas combina filtros por responsável, solicitante e data de abertura', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
   assert.match(source, /function matchesDemandAssignee\(record\)/);
+  assert.match(source, /function matchesDemandRequester\(record\)/);
+  assert.match(source, /function matchesDemandCreatedDate\(record\)/);
+  assert.match(source, /function matchesDemandFilters\(record\)/);
+  assert.match(source, /demandCreatedDate\(record\) === state\.demandCreatedDate/);
   assert.match(source, /Minhas demandas/);
   assert.match(source, /Todos os responsáveis/);
+  assert.match(source, /Todos os solicitantes/);
   assert.match(source, /data-action="demand-assignee-filter"/);
+  assert.match(source, /data-action="demand-requester-filter"/);
+  assert.match(source, /data-action="demand-date-filter"/);
+  assert.match(source, /data-action="clear-demand-filters"/);
   assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
+  assert.match(source, /setDemandRequester\(event\.target\.value\)/);
+  assert.match(source, /setDemandCreatedDate\(event\.target\.value\)/);
+  assert.match(source, /clearDemandFilters\(\)/);
 });
 
 test('catálogo de demandas cobre os motivos recorrentes revisados em produção', () => {
   const configSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/core/config.js'), 'utf8');
   const appSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
-  for (const reason of ['RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'Ligação com falha', 'Novo ramal', 'Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede']) assert.match(configSource, new RegExp(reason));
+  for (const reason of ['RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'Ligação com falha', 'Novo ramal', 'Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede', 'Incluir exames']) assert.match(configSource, new RegExp(reason));
   assert.match(configSource, /'Rede e Internet'/);
+  assert.match(configSource, /Laboratório/);
+  assert.match(configSource, /subjects: \['incluir exames'\]/);
   assert.match(appSource, /function canonicalDemandCategory\(category\)/);
   assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
@@ -314,6 +461,63 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ currentPassword: bootstrapPassword, newPassword: 'Abcdef1!' })
   });
   assert.equal(changedAdmin.status, 200);
+
+  const preRegistrationPassword = `Primeiro1!${crypto.randomBytes(18).toString('hex')}`;
+  const preRegistration = await request('/api/users/pre-cadastro', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ nome: 'Colaborador Pré-cadastrado', cpf: '529.982.247-25', dataNascimento: '1990-05-20', setor: 'Recepção' })
+  });
+  assert.equal(preRegistration.status, 201);
+  const preRegistrationUser = (await preRegistration.json()).user;
+  const incompletePreRegistration = await request('/api/users/pre-cadastro', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ nome: 'Cadastro ativado sem credenciais', cpf: '111.444.777-35', dataNascimento: '1988-01-15', setor: 'Laboratório' })
+  });
+  assert.equal(incompletePreRegistration.status, 201);
+  const incompleteUser = (await incompletePreRegistration.json()).user;
+  const accidentalActivation = await request(`/api/users/${incompleteUser.id}/active`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ active: true })
+  });
+  assert.equal(accidentalActivation.status, 200);
+  const reopenedFirstAccess = await request(`/api/users/${incompleteUser.id}/reopen-first-access`, adminToken, { method: 'POST', body: '{}' });
+  assert.equal(reopenedFirstAccess.status, 200);
+  const reopenedUser = (await reopenedFirstAccess.json()).user;
+  assert.equal(reopenedUser.active, false);
+  assert.equal(reopenedUser.activationStatus, 'pre-cadastro');
+  assert.equal(reopenedUser.email, '');
+  assert.equal(reopenedUser.login, '');
+  const restoredFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '111.444.777-35', dataNascimento: '1988-01-15' })
+  });
+  assert.equal(restoredFirstAccess.status, 200);
+  const invalidReopen = await request(`/api/users/${incompleteUser.id}/reopen-first-access`, adminToken, { method: 'POST', body: '{}' });
+  assert.equal(invalidReopen.status, 422);
+  const duplicatePreRegistrationCorrection = await request(`/api/users/${preRegistrationUser.id}/pre-cadastro`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ cpf: '111.444.777-35', dataNascimento: '1990-05-22' })
+  });
+  assert.equal(duplicatePreRegistrationCorrection.status, 409);
+  const correctedPreRegistration = await request(`/api/users/${preRegistrationUser.id}/pre-cadastro`, adminToken, {
+    method: 'PUT', body: JSON.stringify({ cpf: '123.456.789-09', dataNascimento: '1990-05-22' })
+  });
+  assert.equal(correctedPreRegistration.status, 200);
+  assert.equal((await correctedPreRegistration.json()).user.cpfLast4, '8909');
+  const invalidFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '529.982.247-25', dataNascimento: '1990-05-20' })
+  });
+  assert.equal(invalidFirstAccess.status, 401);
+  const identifiedFirstAccess = await fetch(`${baseUrl}/api/first-access/identify`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cpf: '123.456.789-09', dataNascimento: '1990-05-22' })
+  });
+  assert.equal(identifiedFirstAccess.status, 200);
+  const firstAccessChallenge = await identifiedFirstAccess.json();
+  const invalidCompletion = await fetch(`${baseUrl}/api/first-access/complete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-21', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
+  });
+  assert.equal(invalidCompletion.status, 422);
+  const completedFirstAccess = await fetch(`${baseUrl}/api/first-access/complete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: firstAccessChallenge.token, dataNascimento: '1990-05-22', email: 'colaborador-pre@centralti.local', login: 'colaborador.pre', senha: preRegistrationPassword })
+  });
+  assert.equal(completedFirstAccess.status, 200);
 
   const materials = await request('/api/resources/materiais', adminToken);
   assert.equal(materials.status, 404);
@@ -434,6 +638,22 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     body: JSON.stringify({ titulo: 'Incluir procedimento', solicitante: 'Administrador', tipo: 'interna', categoria: 'Software', assunto: 'RealClinic — Incluir procedimento', prioridade: 'Média', status: 'Aberta', valorProcedimento: 'R$ 80,00', tuss: '10101012' })
   });
   assert.equal(procedureInclusion.status, 201);
+
+  const incompleteLaboratoryExam = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Incluir exame', solicitante: 'Administrador', tipo: 'interna', categoria: 'Laboratório', assunto: 'Incluir exames', prioridade: 'Média', status: 'Aberta', tuss: '40301010' })
+  });
+  assert.equal(incompleteLaboratoryExam.status, 422);
+
+  const laboratoryExam = await request('/api/resources/demandas', adminToken, {
+    method: 'POST',
+    body: JSON.stringify({ titulo: 'Incluir exame', solicitante: 'Administrador', tipo: 'interna', categoria: 'Laboratório', assunto: 'Incluir exames', prioridade: 'Média', status: 'Aberta', tuss: '40301010', valorProcedimento: 'R$ 125,90', convenio: 'Convênio teste' })
+  });
+  assert.equal(laboratoryExam.status, 201);
+  const laboratoryExamRecord = (await laboratoryExam.json()).record;
+  assert.equal(laboratoryExamRecord.tuss, '40301010');
+  assert.equal(laboratoryExamRecord.valorProcedimento, 'R$ 125,90');
+  assert.equal(laboratoryExamRecord.convenio, 'Convênio teste');
 
   const tableUpdate = await request('/api/resources/demandas', adminToken, {
     method: 'POST',
