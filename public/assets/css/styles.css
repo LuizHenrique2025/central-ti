@@ -2065,6 +2065,7 @@ body:not(.light-theme) .demand-detail-heading span {
 }
 
 .overview-bar {
+  position: relative;
   display: grid;
   flex: 1;
   gap: 9px;
