@@ -1,5 +1,6 @@
 const resourceDefinitions = {
   computadores: ['patrimonio', 'ip', 'grupo', 'responsavel', 'localizacao', 'status', 'avaliacao'],
+  pedidos: ['item', 'categoria', 'quantidade', 'setor', 'solicitante', 'status'],
   materiais: ['item', 'categoria', 'quantidade', 'localizacao'],
   programas: ['programa', 'fornecedor', 'dataContratacao', 'formaPagamento', 'periodicidade', 'dataRenovacao', 'valor', 'status'],
   equipamentos: ['patrimonio', 'equipamento', 'categoriaEquipamento', 'ip', 'responsavel', 'localizacao', 'condicao', 'avaliacao'],
