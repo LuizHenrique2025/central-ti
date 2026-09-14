@@ -462,6 +462,22 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   });
   assert.equal(changedAdmin.status, 200);
 
+  // Fluxo de materiais usa registros separados e não altera o inventário.
+  const inventoryBefore = await (await request('/api/resources/equipamentos', adminToken)).json();
+  const materialBody = { item: 'Bobina — Totem', quantidade: '3', setor: 'Setor de teste', observacoes: 'Pedido de teste', status: 'Entregue' };
+  const materialCreated = await request('/api/resources/pedidos', adminToken, { method: 'POST', body: JSON.stringify(materialBody) });
+  assert.equal(materialCreated.status, 201);
+  const materialRecord = (await materialCreated.json()).record;
+  assert.equal(materialRecord.status, 'Solicitado');
+  assert.equal(materialRecord.categoria, 'Bobinas');
+  for (const status of ['Em atendimento', 'Entregue']) {
+    const changed = await request(`/api/resources/pedidos/${materialRecord.id}`, adminToken, { method: 'PUT', body: JSON.stringify({ ...materialBody, status }) });
+    assert.equal(changed.status, 200); assert.equal((await changed.json()).record.status, status);
+  }
+  const invalidQuantity = await request('/api/resources/pedidos', adminToken, { method: 'POST', body: JSON.stringify({ ...materialBody, quantidade: 0 }) });
+  assert.equal(invalidQuantity.status, 422);
+  const inventoryAfter = await (await request('/api/resources/equipamentos', adminToken)).json();
+  assert.deepEqual(inventoryAfter, inventoryBefore);
   const preRegistrationPassword = `Primeiro1!${crypto.randomBytes(18).toString('hex')}`;
   const preRegistration = await request('/api/users/pre-cadastro', adminToken, {
     method: 'POST',
@@ -687,6 +703,20 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     assert.equal(changed.status, 200);
   }
 
+  const ownMaterial = await request('/api/resources/pedidos', tokenA, { method: 'POST', body: JSON.stringify({ item: 'Mouse', quantidade: '1', setor: 'Setor A', solicitante: 'Nome falso', status: 'Entregue' }) });
+  assert.equal(ownMaterial.status, 201);
+  const ownMaterialRecord = (await ownMaterial.json()).record;
+  assert.equal(ownMaterialRecord.solicitante, 'Usuário A');
+  assert.equal(ownMaterialRecord.status, 'Solicitado');
+  assert.equal((await request(`/api/resources/pedidos/${ownMaterialRecord.id}`, tokenB)).status, 404);
+  const otherMaterials = await (await request('/api/resources/pedidos', tokenB)).json();
+  assert.equal(otherMaterials.records.length, 0);
+  const ownMaterials = await (await request('/api/resources/pedidos', tokenA)).json();
+  assert.deepEqual(ownMaterials.records.map(record => record.id), [ownMaterialRecord.id]);
+  assert.equal((await request(`/api/resources/pedidos/${ownMaterialRecord.id}`, tokenA, { method: 'PUT', body: JSON.stringify({ item: 'Mouse', quantidade: '1', setor: 'Setor A', status: 'Entregue' }) })).status, 403);
+  assert.equal((await request(`/api/resources/pedidos/${ownMaterialRecord.id}`, tokenA, { method: 'DELETE' })).status, 403);
+  const otherExport = await (await request('/api/resources/pedidos/export', tokenB)).text();
+  assert(!otherExport.includes('Setor A'));
   const managedUsers = await request('/api/users', adminToken);
   const userA = (await managedUsers.json()).users.find(user => user.email === 'usuario-a@centralti.local');
   const reset = await request(`/api/users/${userA.id}/password`, adminToken, { method: 'PUT', body: JSON.stringify({ password: 'Temporaria2026!' }) });
