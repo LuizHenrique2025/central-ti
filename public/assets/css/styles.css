@@ -95,7 +95,7 @@ button { cursor:pointer; border:0; }
   height:340px;
   left:-95px;
   bottom:-125px;
-  background:linear-gradient(145deg,#22e7d5,#1677ff);
+  background:linear-gradient(145deg,#22e7d5,var(--blue));
   box-shadow:0 0 100px #20c9de66;
 }
 .login-page::after {
@@ -690,7 +690,7 @@ button { cursor:pointer; border:0; }
 }
 .demand-modal .modal-actions .primary {
   color:#fff;
-  background:#1677ff;
+  background:var(--blue);
 }
 .demand-modal .observations-field {
   margin:0;
@@ -791,12 +791,12 @@ button { cursor:pointer; border:0; }
 
 /* Tema unificado grafite e prata do ambiente autenticado. */
 :root {
-  --ink:#edf0f3;
-  --muted:#9ba3ad;
-  --line:#343a42;
-  --bg:#0d0f12;
-  --blue:#b9c0c8;
-  --navy:#111317;
+  --ink:#edf1f5;
+  --muted:#8b96a3;
+  --line:#2a3038;
+  --bg:#0b0e13;
+  --blue:#3b82f6;
+  --navy:#0f141c;
 }
 body {
   color:var(--ink);
@@ -1453,7 +1453,7 @@ body:not(.light-theme) .announcement small {
 body:not(.light-theme) .ticket-delete { color:#ffb7be; border-color:#80454d; background:#4d272c; }
 .light-theme .ticket-delete { color:#b93843; border-color:#e2a7ad; background:#fff4f5; }
 .dial-extension { border:1px solid #d4dbe3; border-radius:6px; padding:6px 9px; margin-right:7px; color:#354355; background:#edf1f5; font-size:11px; font-weight:800; }
-.dial-extension:hover:not(:disabled) { color:#fff; border-color:#1677ff; background:#1677ff; }
+.dial-extension:hover:not(:disabled) { color:#fff; border-color:var(--blue); background:var(--blue); }
 .dial-extension:disabled { cursor:not-allowed; opacity:.45; }
 body:not(.light-theme) .dial-extension { color:#e7ebee; border-color:#4a5058; background:#262b31; }
 body:not(.light-theme) .dial-extension:hover:not(:disabled) { color:#111317; border-color:#dce1e5; background:#dce1e5; }
