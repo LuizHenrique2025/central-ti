@@ -346,7 +346,7 @@ test('quadro de demandas combina filtros por responsável, solicitante e data de
   assert.match(source, /data-action="clear-demand-filters"/);
   assert.match(source, /setDemandAssignee\(event\.target\.value\)/);
   assert.match(source, /setDemandRequester\(event\.target\.value\)/);
-  assert.match(source, /setDemandCreatedDate\(event\.target\.value\)/);
+  assert.match(source, /state\.demandDateDraft = event\.target\.value/);
   assert.match(source, /clearDemandFilters\(\)/);
 });
 
