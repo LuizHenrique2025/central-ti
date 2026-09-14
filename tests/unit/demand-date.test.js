@@ -1,0 +1,25 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../../public/assets/js/app.js'), 'utf8');
+test('editar data mantém campo e aplica filtro somente após confirmação', () => {
+  const state = { demandCreatedDate: '', demandDateDraft: '' }; let renders = 0; const handlers = {};
+  const context = vm.createContext({ state, render: () => renders++, document: { addEventListener: (type, fn) => { handlers[type] = fn; } } });
+  const start = source.indexOf("document.addEventListener('change',");
+  vm.runInContext(source.slice(start, source.indexOf("document.addEventListener('dragstart',", start)), context);
+  const functions = source.slice(source.indexOf('function setDemandCreatedDate('), source.indexOf('function clearDemandFilters('));
+  vm.runInContext(functions, context);
+  for (const value of ['0002-09-14', '0020-09-14', '0202-09-14', '2026-09-14']) handlers.change({ target: { value, matches: selector => selector.includes('demand-date-filter') } });
+  assert.equal(renders, 0); assert.equal(state.demandCreatedDate, ''); assert.equal(state.demandDateDraft, '2026-09-14');
+  const input = { value: '2026-09-14', reportValidity: () => true };
+  context.control = { parentElement: { querySelector: () => input } };
+  vm.runInContext('applyDemandDate(control)', context);
+  assert.equal(state.demandCreatedDate, '2026-09-14'); assert.equal(renders, 1);
+  input.reportValidity = () => false; input.value = '';
+  vm.runInContext('applyDemandDate(control)', context); assert.equal(renders, 1);
+  input.reportValidity = () => true;
+  vm.runInContext('applyDemandDate(control)', context); assert.equal(state.demandCreatedDate, '');
+  let opened = false; input.focus = () => {}; input.showPicker = () => { opened = true; };
+  vm.runInContext('openDemandCalendar(control)', context); assert(opened);
+});

@@ -2626,3 +2626,9 @@ body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; bor
 .light-theme .content > .kanban .kanban-column { border-color:#dce4eb; background:#eef2f5; }
 .light-theme .content > .kanban .demand-card { border-color:#e1e7ed; background:#fff; box-shadow:none; }
 .light-theme .content > .kanban .demand-card:hover { border-color:#b7cee1; background:#fff; box-shadow:none; }
+
+/* Data de abertura: digitação preservada até confirmar o filtro. */
+.demand-date-controls { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.demand-date-controls input { color-scheme:dark; }
+.light-theme .demand-date-controls input { color-scheme:light; }
+.demand-date-controls button { min-height:34px; white-space:nowrap; }

@@ -1,7 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const TOKEN = 'central-ti-token';
 const escapeAttribute = window.CentralTiSafeRender?.escapeAttribute || (value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])));
-const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, reportTab: 'overview', exclusionFilters: {}, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', demandAssignee: '', demandRequester: '', demandCreatedDate: '', start: '', end: '', networkUrls: [], networkQrUrl: null, modal: null, pending: null, firstAccess: null, loginStep: 'identifier', loginIdentifier: '', loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, ramalOrder: 'asc', mailFolder: 'inbox', selectedMessageId: null, selectedMailThreadIds: [], mailQuery: '' };
+const state = { token: localStorage.getItem(TOKEN), user: null, page: 'dashboard', records: [], users: [], messages: [], unreadMessages: 0, dashboard: null, report: null, reportTab: 'overview', exclusionFilters: {}, statuses: ['Aberta', 'Em andamento', 'Concluída'], computerGroups: ['Geral', 'Faturamento', 'Eletivas', 'Laboratório'], locations: null, query: '', demandAssignee: '', demandRequester: '', demandCreatedDate: '', demandDateDraft: '', start: '', end: '', networkUrls: [], networkQrUrl: null, modal: null, pending: null, firstAccess: null, loginStep: 'identifier', loginIdentifier: '', loading: false, formDirty: false, newDemandType: null, programStatus: '', programPeriodicity: '', resourceFilters: {}, ramalOrder: 'asc', mailFolder: 'inbox', selectedMessageId: null, selectedMailThreadIds: [], mailQuery: '' };
 state.demandReportFilters ||= { assignee: [], requester: [], sector: [], reason: [], category: [], status: [] };
 state.demandReportDraft ||= { ...state.demandReportFilters };
 state.demandReportColumns ||= { ticket: true, createdAt: true, requester: true, sector: true, reason: true, category: true, assignee: true, status: true };
@@ -82,6 +82,8 @@ document.addEventListener('click', event => {
     case 'open-record': return openRecord(control.dataset.resource, control.dataset.recordId || '');
     case 'open-demand': return openDemand(control.dataset.demandType);
     case 'network-qr': return openNetworkQr(control.dataset.networkId);
+    case 'open-demand-calendar': return openDemandCalendar(control);
+    case 'apply-demand-date': return applyDemandDate(control);
     case 'clear-demand-filters': return clearDemandFilters();
     default: return undefined;
   }
@@ -95,7 +97,7 @@ document.addEventListener('change', event => {
   if (event.target.matches('[data-action="move-demand"]')) moveDemand(event.target.dataset.demandId, event.target.value);
   if (event.target.matches('[data-action="demand-assignee-filter"]')) setDemandAssignee(event.target.value);
   if (event.target.matches('[data-action="demand-requester-filter"]')) setDemandRequester(event.target.value);
-  if (event.target.matches('[data-action="demand-date-filter"]')) setDemandCreatedDate(event.target.value);
+  if (event.target.matches('[data-action="demand-date-filter"]')) state.demandDateDraft = event.target.value;
 });
 
 document.addEventListener('dragstart', event => {
@@ -158,7 +160,7 @@ function matchesDemandCreatedDate(record) { return !state.demandCreatedDate || d
 function matchesDemandFilters(record) { return matchesDemandSearch(record) && matchesDemandAssignee(record) && matchesDemandRequester(record) && matchesDemandCreatedDate(record); }
 function demandAssigneeFilter(records) { const assignees = [...new Set(records.map(record => String(record.tecnicoResponsavel || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); const mineCount = records.filter(record => normalizeDemandText(record.tecnicoResponsavel) === normalizeDemandText(state.user?.nome)).length; const unassignedCount = records.filter(record => !String(record.tecnicoResponsavel || '').trim()).length; return `<select data-action="demand-assignee-filter" aria-label="Filtrar demandas por responsável"><option value="">Todos os responsáveis</option><option value="__mine__" ${state.demandAssignee === '__mine__' ? 'selected' : ''}>Minhas demandas (${mineCount})</option>${unassignedCount ? `<option value="__unassigned__" ${state.demandAssignee === '__unassigned__' ? 'selected' : ''}>Não assumidas (${unassignedCount})</option>` : ''}${assignees.map(name => `<option value="${esc(name)}" ${state.demandAssignee === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
 function demandRequesterFilter(records) { const requesters = [...new Set(records.map(record => String(record.solicitante || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); return `<select data-action="demand-requester-filter" aria-label="Filtrar demandas por solicitante"><option value="">Todos os solicitantes</option>${requesters.map(name => `<option value="${esc(name)}" ${state.demandRequester === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
-function demandFilters(records) { const hasFilters = state.demandAssignee || state.demandRequester || state.demandCreatedDate; return `<span class="demand-filters"><label class="demand-filter-field"><span>Solicitante</span>${demandRequesterFilter(records)}</label><label class="demand-filter-field demand-date-filter"><span>Data de abertura</span><input type="date" value="${esc(state.demandCreatedDate)}" data-action="demand-date-filter" aria-label="Filtrar demandas por data de abertura"/></label><label class="demand-filter-field"><span>Responsável</span>${demandAssigneeFilter(records)}</label>${hasFilters ? '<button class="secondary demand-filter-clear" data-action="clear-demand-filters">Limpar filtros</button>' : ''}</span>`; }
+function demandFilters(records) { const hasFilters = state.demandAssignee || state.demandRequester || state.demandCreatedDate; return `<span class="demand-filters"><label class="demand-filter-field"><span>Solicitante</span>${demandRequesterFilter(records)}</label><span class="demand-filter-field demand-date-filter"><span>Data de abertura</span><span class="demand-date-controls"><input type="date" value="${esc(state.demandDateDraft)}" data-action="demand-date-filter" aria-label="Filtrar demandas por data de abertura"/><button type="button" class="secondary" data-action="open-demand-calendar" aria-label="Abrir calendário de data de abertura" title="Abrir calendário">▦</button><button type="button" class="secondary" data-action="apply-demand-date">Aplicar data</button></span></span><label class="demand-filter-field"><span>Responsável</span>${demandAssigneeFilter(records)}</label>${hasFilters ? '<button class="secondary demand-filter-clear" data-action="clear-demand-filters">Limpar filtros</button>' : ''}</span>`; }
 function canonicalDemandStatus(status) { return String(status || '').trim() === 'Concluida' ? 'Concluída' : status; }
 function canonicalDemandCategory(category) { return String(category || '').trim() === 'Outro' ? 'Outros' : category; }
 function demandStatusTone(status) { const value = normalizeDemandText(status); if (value.includes('conclu')) return 'tone-completed'; if (value.includes('andamento')) return 'tone-progress'; if (value.includes('aberta')) return 'tone-open'; return 'tone-neutral'; }
@@ -602,8 +604,10 @@ async function go(page) {
 function setSearch(value) { state.query = value; render(); const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
 function setDemandAssignee(value) { state.demandAssignee = value; render(); }
 function setDemandRequester(value) { state.demandRequester = value; render(); }
-function setDemandCreatedDate(value) { state.demandCreatedDate = value; render(); }
-function clearDemandFilters() { state.demandAssignee = ''; state.demandRequester = ''; state.demandCreatedDate = ''; render(); }
+function setDemandCreatedDate(value) { state.demandCreatedDate = value; state.demandDateDraft = value; render(); }
+function openDemandCalendar(control) { const input = control.parentElement.querySelector('input'); input.focus(); try { input.showPicker?.(); } catch { /* O campo permanece disponível para digitação. */ } }
+function applyDemandDate(control) { const input = control.parentElement.querySelector('input'); if (!input.reportValidity()) return; setDemandCreatedDate(input.value); }
+function clearDemandFilters() { state.demandAssignee = ''; state.demandRequester = ''; state.demandCreatedDate = ''; state.demandDateDraft = ''; render(); }
 function setProgramFilter(field, value) { state[field] = value; render(); }
 function setResourceFilter(resource, key, value) { state.resourceFilters[`${resource}-${key}`] = value; render(); }
 function setUserFilter(key, value) { state.resourceFilters[`usuarios-${key}`] = value; render(); const input = $('.users-search'); if (key === 'query' && input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
