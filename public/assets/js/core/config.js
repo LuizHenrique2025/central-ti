@@ -14,10 +14,10 @@ const modules = {
 };
 
 const DEMAND_CATEGORIES = {
-  Software: ['RealClinic — Login / Acesso', 'RealClinic — Exclusão de pagamento particular', 'RealClinic — Exclusão de fatura', 'RealClinic — Exclusão de atendimento', 'RealClinic — Alterar convênio', 'RealClinic — Incluir procedimento', 'RealClinic — Atualizar valor de procedimento', 'RealClinic — Atualizar taxa', 'RealClinic — Incluir profissional', 'RealClinic — Abrir chamado TDSA', 'RealClinic — Relatório', 'RealClinic — Movimentação de estoque', 'RealClinic — Atualizar tabela', 'RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'IPTell — Bot', 'IPTell — Login / Acesso', 'Site do hospital'],
+  Software: ['RealClinic — Login / Acesso', 'RealClinic — Exclusão de pagamento particular', 'RealClinic — Exclusão de fatura', 'RealClinic — Exclusão de atendimento', 'RealClinic — Alterar convênio', 'RealClinic — Incluir procedimento', 'RealClinic — Atualizar valor de procedimento', 'RealClinic — Atualizar taxa', 'RealClinic — Incluir profissional', 'RealClinic — Abrir chamado TDSA', 'RealClinic — Relatório', 'RealClinic — Movimentação de estoque', 'RealClinic — Atualizar tabela', 'RealClinic — Cadastro / correção de paciente', 'RealClinic — Agenda / reagendamento', 'RealClinic — Erro geral / integração', 'RealClinic — Abrir atendimento', 'RealClinic — Exclusão de procedimento', 'RealClinic — Liberar laudo', 'RealClinic — Liberar retorno', 'RealClinic — Vincular procedimento ao convênio', 'RealClinic — Vincular procedimento ao profissional', 'RealClinic — Unificar cadastros', 'RealClinic — Ativar / desativar profissional', 'RealClinic — Alterar código de guia', 'Portais de convênios — Login / Acesso', 'Worklab — Erro / integração', 'Workweb — Login / Acesso', 'Ponto Dixi', 'Pacote Office', 'IPTell — Bot', 'IPTell — Login / Acesso', 'IPTell — Cadastro no bot', 'IPTell — Convênios no bot', 'IPTell — Procedimentos no bot', 'IPTell — Agendamento automático', 'Site do hospital'],
   Hardware: ['Computador', 'Fone', 'Impressora', 'Tomografia', 'Raio X', 'Etiquetadora', 'Scanner'],
-  'Impressão': ['Toner', 'Etiqueta'],
-  Telefonia: ['Telefones', 'Ramais', 'MicroSIP', 'Ligação com falha', 'Novo ramal'],
+  'Impressão': ['Toner', 'Etiqueta', 'Impressora — Troca de fusor'],
+  Telefonia: ['Telefones', 'Ramais', 'MicroSIP', 'Ligação com falha', 'Novo ramal', 'Chamadas perdidas'],
   'Rede e Internet': ['Wi-Fi sem conexão', 'Internet instável / sem acesso', 'Configuração de rede'],
   Laboratório: ['Incluir exames'],
   Outros: []
