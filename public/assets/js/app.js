@@ -10,6 +10,9 @@ state.demandReportSection ||= 'professionals';
 const mailAttachmentUrls = new Map();
 function enhanceCurrentSurface() { window.CentralTiAttachments?.enhanceCurrentSurface({ state, token: state.token, mailAttachmentUrls, toast }); }
 let navigationRequest = 0;
+let searchTimer;
+const COMPLETED_PAGE_SIZE = 25;
+let completedVisible = COMPLETED_PAGE_SIZE;
 let closingModal = false;
 let pendingAction = null;
 let knownUnreadMessageIds = null;
@@ -73,6 +76,7 @@ document.addEventListener('click', event => {
   if (!control || control.disabled) return;
   switch (control.dataset.action) {
     case 'go': return go(control.dataset.page);
+    case 'more-completed': completedVisible += COMPLETED_PAGE_SIZE; return render({ preserveScroll: true });
     case 'open-mobile-navigation': return openMobileNavigation(control);
     case 'close-mobile-navigation': return closeMobileNavigation();
     case 'logout': return logout();
@@ -167,14 +171,20 @@ function demandStatusTone(status) { const value = normalizeDemandText(status); i
 function isCompletedDemand(record) { return demandStatusTone(record.status) === 'tone-completed'; }
 function demandSlaTime(record) { const value = new Date(record.prazoSla || '').getTime(); return Number.isFinite(value) ? value : null; }
 function demandPriorityRail(cards) { const now = Date.now(), nextDay = now + 24 * 60 * 60 * 1000; const active = cards.filter(card => !isCompletedDemand(card)); const groups = [['overdue', 'SLA vencido', active.filter(card => { const due = demandSlaTime(card); return due !== null && due < now; })], ['soon', 'SLA vence em até 24 h', active.filter(card => { const due = demandSlaTime(card); return due !== null && due >= now && due <= nextDay; })], ['unassigned', 'Aguardando responsável', active.filter(card => !String(card.tecnicoResponsavel || '').trim())]]; const visible = groups.filter(([, , records]) => records.length); if (!visible.length) return '<section class="demand-priority-rail demand-priority-clear" aria-label="Prioridades de demandas">Nenhuma demanda exige atenção imediata.</section>'; return `<section class="demand-priority-rail" aria-label="Prioridades de demandas">${visible.map(([kind, label, records]) => `<section class="demand-priority-group priority-${kind}"><header><span>${esc(label)}</span><b>${records.length}</b></header></section>`).join('')}</section>`; }
-function demandBoard() { const cards = state.records.filter(matchesDemandFilters); return `${header('Demandas', 'Quadro de trabalho')}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(state.records)}<div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button><button class="add-record" data-action="open-record" data-resource="demandas">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => canonicalDemandStatus(card.status) === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${statusCards.map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}</div></section>`; }).join('')}</div>`; }
+function demandBoard() { const cards = state.records.filter(matchesDemandFilters); return `${header('Demandas', 'Quadro de trabalho')}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(state.records)}<div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button><button class="add-record" data-action="open-record" data-resource="demandas">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => canonicalDemandStatus(card.status) === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`; }
+function visibleDemandCards(cards) {
+  return cards.length && cards.every(isCompletedDemand) ? cards.slice(0, completedVisible) : cards;
+}
+function completedMoreButton(cards) {
+  return cards.length > completedVisible && cards.every(isCompletedDemand) ? '<button class="secondary" data-action="more-completed">Carregar mais concluídas</button>' : '';
+}
 function filteredDemandBoard(type) {
   const external = type === 'externa';
   const records = state.records.filter(record => (record.tipo || 'interna') === type);
   const cards = records.filter(matchesDemandFilters);
   const title = external ? 'Demandas Hospital' : 'Demandas Internas';
   const subtitle = external ? 'Hospital · solicitações de setores externos' : 'T.I. · atividades internas da equipe';
-  return `${header(title, subtitle)}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(records)}<div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" data-action="open-demand" data-demand-type="${esc(type)}">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => card.status === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${statusCards.map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(canonicalDemandCategory(card.categoria) || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(formatSla(card.prazoSla))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}</div></section>`; }).join('')}</div>`;
+  return `${header(title, subtitle)}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(records)}<div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" data-action="open-demand" data-demand-type="${esc(type)}">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => card.status === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(canonicalDemandCategory(card.categoria) || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(formatSla(card.prazoSla))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`;
 }
 function ramalFilterCategory(value) {
   const sector = String(value || '').trim();
@@ -605,6 +615,8 @@ async function load(options = {}) {
   }
 }
 async function go(page) {
+  clearTimeout(searchTimer);
+  completedVisible = COMPLETED_PAGE_SIZE;
   const requestId = ++navigationRequest;
   mobileNavigationOpen = false;
   state.page = page;
@@ -612,7 +624,7 @@ async function go(page) {
   state.modal = null;
   await load({ requestId });
 }
-function setSearch(value) { state.query = value; render(); const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
+function setSearch(value) { state.query = value; completedVisible = COMPLETED_PAGE_SIZE; clearTimeout(searchTimer); const page = state.page; searchTimer = setTimeout(() => { if (state.page !== page || state.modal) return; render(); const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }, 200); }
 function setDemandAssignee(value) { state.demandAssignee = value; render(); }
 function setDemandRequester(value) { state.demandRequester = value; render(); }
 function setDemandCreatedDate(value) { state.demandCreatedDate = value; state.demandDateDraft = value; render(); }
