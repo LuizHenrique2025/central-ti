@@ -198,7 +198,7 @@ function injectPrintableReportTemplate() {
 }
 
 async function refreshInBackground() {
-  if (!state.token || !state.user || state.modal || state.formDirty || state.loading || state.backgroundRefreshing) return;
+  if (document.hidden || !state.token || !state.user || state.modal || state.formDirty || state.loading || state.backgroundRefreshing) return;
   state.backgroundRefreshing = true;
   try {
     const demandPage = state.page === 'demandas' || state.page.startsWith('demandas-');
@@ -227,7 +227,7 @@ applyPasswordMinimum();
 applySidebarChrome();
 applyColorTheme();
 injectPrintableReportTemplate();
-setInterval(refreshInBackground, 4000);
+setInterval(refreshInBackground, 15000);
 window.addEventListener('focus', refreshInBackground);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshInBackground(); });
 boot();

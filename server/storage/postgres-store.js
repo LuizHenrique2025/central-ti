@@ -27,8 +27,17 @@ function createPostgresStore({ pool, now, passwordHash }) {
     async setUserActive(userId, active) { return this.updateUser(userId, { active }); },
     async setUserPermissions(userId, permissions) { return this.updateUser(userId, { permissions }); },
     async updatePassword(userId, password, mustChangePassword = false) { const values = passwordHash(password); return this.updateUser(userId, { ...values, mustChangePassword }); },
+    async demandSummaries() {
+      const result = await pool.query(`SELECT id,
+        (data - 'anexoPrint' - 'interacoes')
+        || CASE WHEN data->'anexoPrint'->>'data' IS NOT NULL THEN jsonb_build_object('anexoPrint', jsonb_build_object('mime', data->'anexoPrint'->>'mime', 'hasAttachment', true)) ELSE '{}'::jsonb END
+        || jsonb_build_object('interacoes', COALESCE((SELECT jsonb_agg((item - 'anexoPrint') || CASE WHEN item->'anexoPrint'->>'data' IS NOT NULL THEN jsonb_build_object('anexoPrint', jsonb_build_object('mime', item->'anexoPrint'->>'mime', 'hasAttachment', true)) ELSE '{}'::jsonb END ORDER BY ordinal) FROM jsonb_array_elements(COALESCE(data->'interacoes', '[]'::jsonb)) WITH ORDINALITY AS interactions(item, ordinal)), '[]'::jsonb)) AS data,
+        created_at, updated_at, created_by, updated_by
+        FROM records WHERE resource='demandas' ORDER BY updated_at DESC`);
+      return result.rows.map(pgRecord);
+    },
     async records(resource) { return (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 ORDER BY updated_at DESC', [resource])).rows.map(pgRecord); },
-    async record(resource, recordId) { const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
+    async record(resource, recordId) { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) return null; const row = (await pool.query('SELECT id,data,created_at,updated_at,created_by,updated_by FROM records WHERE resource=$1 AND id=$2', [resource, recordId])).rows[0]; return row && pgRecord(row); },
     async createRecord(resource, record) { await pool.query('INSERT INTO records (id,resource,data,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [record.id, resource, record, record.createdAt, record.updatedAt, record.createdBy, record.updatedBy]); return record; },
     async updateRecord(resource, recordId, fields, userId) { const previous = await this.record(resource, recordId); if (!previous) return null; const updated = { ...previous, ...fields, updatedAt: now(), updatedBy: userId }; await pool.query('UPDATE records SET data=$3,updated_at=$4,updated_by=$5 WHERE resource=$1 AND id=$2', [resource, recordId, updated, updated.updatedAt, userId]); return updated; },
     async deleteRecord(resource, recordId) { const previous = await this.record(resource, recordId); if (!previous) return null; await pool.query('DELETE FROM records WHERE resource=$1 AND id=$2', [resource, recordId]); return previous; },
