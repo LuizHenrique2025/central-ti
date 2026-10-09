@@ -10,6 +10,38 @@ state.demandReportSection ||= 'professionals';
 const mailAttachmentUrls = new Map();
 function enhanceCurrentSurface() { window.CentralTiAttachments?.enhanceCurrentSurface({ state, token: state.token, mailAttachmentUrls, toast }); }
 let navigationRequest = 0;
+// Invalida leituras iniciadas antes/durante uma confirmação local.
+let demandRevision = 0;
+let demandListRequest = 0;
+let demandDetailsRequest = 0;
+const pendingDemandUpdates = new Set();
+function syncDemandRecord(record) {
+  demandRevision++;
+  if (state.page.startsWith('demandas')) {
+    state.records = state.records.map(current => current.id === record.id ? { ...current, ...record } : current);
+  }
+  if (state.modal?.type === 'demand-details' && state.modal.record.id === record.id) {
+    state.modal.record = { ...state.modal.record, ...record };
+  }
+}
+async function updateDemandRecord(id, endpoint, body) {
+  if (pendingDemandUpdates.has(id)) return false;
+  // O card só muda após o servidor confirmar; uma falha mantém o estado anterior.
+  pendingDemandUpdates.add(id);
+  demandRevision++;
+  const sessionToken = state.token;
+  try {
+    const result = await api(`/api/resources/demandas/${id}/${endpoint}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (state.token !== sessionToken) return false;
+    syncDemandRecord(result.record);
+    render({ preserveScroll: true });
+    return true;
+  } finally {
+    pendingDemandUpdates.delete(id);
+    demandRevision++;
+    releasePendingAction();
+  }
+}
 let searchTimer;
 const COMPLETED_PAGE_SIZE = 25;
 let completedVisible = COMPLETED_PAGE_SIZE;
@@ -555,6 +587,8 @@ async function load(options = {}) {
   const requestId = options.requestId ?? navigationRequest;
   const requestedPage = state.page;
   const before = silent ? dataSnapshot() : '';
+  const revision = demandRevision;
+  const listRequest = requestedPage.startsWith('demandas') ? ++demandListRequest : null;
   const isCurrentRequest = () => requestId === navigationRequest && requestedPage === state.page;
   const usersForPage = () => state.user.perfil === 'admin' ? api('/api/users') : Promise.resolve({ users: [] });
 
@@ -572,6 +606,7 @@ async function load(options = {}) {
     } else if (requestedPage === 'demandas' || requestedPage.startsWith('demandas-')) {
       const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), usersForPage()]);
       if (!isCurrentRequest()) return;
+      if (revision !== demandRevision || listRequest !== demandListRequest || pendingDemandUpdates.size) return;
       state.records = records.records;
       state.statuses = statuses.statuses;
       state.users = users.users;
@@ -667,10 +702,16 @@ async function openNetworkQr(id) {
 }
 function openDemand(type) { state.newDemandType = type; openRecord('demandas'); state.newDemandType = type; render(); addObservationField(); }
 async function openDemandDetails(id) {
+  const request = ++demandDetailsRequest;
+  const revision = demandRevision;
+  const navigation = navigationRequest;
+  const previousModal = state.modal;
   try {
     const result = await api(`/api/resources/demandas/${id}`);
+    if (request !== demandDetailsRequest || revision !== demandRevision || pendingDemandUpdates.has(id) || navigation !== navigationRequest || state.modal !== previousModal) return;
     const record = result.records?.[0];
     if (!record) return toast('Chamado não encontrado.');
+    syncDemandRecord(record);
     state.modal = { type: 'demand-details', record };
     state.formDirty = false;
     render();
@@ -703,9 +744,7 @@ async function assignDemandToMe(id) {
   const button = document.querySelector('.ticket-assume');
   beginPendingAction(button, { label: 'Atribuindo…', form: true });
   try {
-    await api(`/api/resources/demandas/${id}/assign-self`, { method: 'PUT', body: '{}' });
-    await openDemandDetails(id);
-    toast('Chamado atribuído a você.');
+    if (await updateDemandRecord(id, 'assign-self', {})) toast('Chamado atribuído a você.');
   } catch (error) {
     toast(error.message);
   }
@@ -857,7 +896,21 @@ function stopKanbanAutoScroll() {
   dragScrollFrame = null;
 }
 async function dropDemand(event, status) { event.preventDefault(); event.stopPropagation(); const demandId = draggedDemandId || event.dataTransfer.getData('demandId'); draggedDemandId = null; stopKanbanAutoScroll(); if (!demandId || !state.records.some(record => record.id === demandId)) return; await moveDemand(demandId, status); }
-async function moveDemand(id, status) { const demand = state.records.find(record => record.id === id); if (!demand || demand.status === status) return; if (!demand.tecnicoResponsavel) { await openDemandDetails(id); return toast('Veja as informações e assuma o chamado antes de alterar o status.'); } try { await api(`/api/resources/demandas/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }); if (state.page.startsWith('demandas-')) await go(state.page); else await load(); toast(`Demanda movida para ${status}.`); } catch (error) { toast(error.message); } }
+async function moveDemand(id, status) {
+  const demand = state.records.find(record => record.id === id);
+  if (!demand || demand.status === status) return;
+  if (!demand.tecnicoResponsavel) {
+    await openDemandDetails(id);
+    render({ preserveScroll: true });
+    return toast('Veja as informações e assuma o chamado antes de alterar o status.');
+  }
+  try {
+    if (await updateDemandRecord(id, 'status', { status })) toast(`Demanda movida para ${status}.`);
+  } catch (error) {
+    render({ preserveScroll: true });
+    toast(error.message);
+  }
+}
 async function saveStatuses(event) { event.preventDefault(); const statuses = new FormData(event.target).getAll('status').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/demand-statuses', { method: 'PUT', body: JSON.stringify({ statuses }) }); state.statuses = result.statuses; closeModal(true); await load(); toast('Status atualizados.'); } catch (error) { showFormError(event.target, error.message); } }
 async function saveComputerGroups(event) { event.preventDefault(); const groups = new FormData(event.target).getAll('group').map(value => value.trim()).filter(Boolean); try { const result = await api('/api/computer-groups', { method: 'PUT', body: JSON.stringify({ groups }) }); state.computerGroups = result.groups; closeModal(true); toast('Grupos atualizados.'); } catch (error) { showFormError(event.target, error.message); } }
 async function sendMail(event, replyToId = '', currentThreadId = '') {
