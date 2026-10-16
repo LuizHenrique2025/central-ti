@@ -2647,6 +2647,9 @@ body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; bor
 .login-card .field input,.light-theme .login-card .field input { color:#523344; border-color:#c7859f; background:#fff; box-shadow:none; }
 .login-card .field input:focus,.light-theme .login-card .field input:focus { border-color:#a84468; box-shadow:0 0 0 3px #a8446826; }
 .login-card .primary,.light-theme .login-card .primary { color:#fff; background:#a84468; border-color:#a84468; box-shadow:none; }
-.login-card .primary:hover,.light-theme .login-card .primary:hover { background:#893451; }
+.login-card .primary:hover,.light-theme .login-card .primary:hover { color:#fff; background:#893451; }
 .login-card .link-button,.light-theme .login-card .link-button,
-.login-card .login-back,.light-theme .login-card .login-back { color:#893451; }
+.login-card .login-back,.light-theme .login-card .login-back,
+.login-card .login-back:hover,.light-theme .login-card .login-back:hover,
+.login-card .forgot-password,.light-theme .login-card .forgot-password,
+.login-card .forgot-password:hover,.light-theme .login-card .forgot-password:hover { color:#893451; }
