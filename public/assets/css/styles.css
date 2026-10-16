@@ -2632,3 +2632,24 @@ body:not(.light-theme) .demand-date-filter input { border:1px solid #3a4047; bor
 .demand-date-controls input { color-scheme:dark; }
 .light-theme .demand-date-controls input { color-scheme:light; }
 .demand-date-controls button { min-height:34px; white-space:nowrap; }
+
+
+/* Prévia local de Outubro Rosa restrita à tela de login. */
+.login-page,.light-theme .login-page { color:#523344; background:#fff1f6; }
+.login-page::before,.light-theme .login-page::before { border-color:#c7859f; box-shadow:none; opacity:.22; }
+.login-page::after,.light-theme .login-page::after { background:#e5a9be; box-shadow:-150px 16px 0 -12px #edc1d1; opacity:.3; }
+.login-panel::before,.light-theme .login-panel::before { background:#ffffff55; border-color:#eedbe3; box-shadow:0 24px 70px #79314e12; }
+.login-card,.light-theme .login-card { color:#523344; border-color:#e5bdcd; background:#fffbfd; box-shadow:0 24px 60px #79314e18; }
+.login-card::before,.light-theme .login-card::before,
+.login-card h2,.light-theme .login-card h2,
+.login-card .field,.light-theme .login-card .field { color:#523344; text-shadow:none; }
+.login-card > p,.light-theme .login-card > p { color:#785464; }
+.login-card .field input,.light-theme .login-card .field input { color:#523344; border-color:#c7859f; background:#fff; box-shadow:none; }
+.login-card .field input:focus,.light-theme .login-card .field input:focus { border-color:#a84468; box-shadow:0 0 0 3px #a8446826; }
+.login-card .primary,.light-theme .login-card .primary { color:#fff; background:#a84468; border-color:#a84468; box-shadow:none; }
+.login-card .primary:hover,.light-theme .login-card .primary:hover { color:#fff; background:#893451; }
+.login-card .link-button,.light-theme .login-card .link-button,
+.login-card .login-back,.light-theme .login-card .login-back,
+.login-card .login-back:hover,.light-theme .login-card .login-back:hover,
+.login-card .forgot-password,.light-theme .login-card .forgot-password,
+.login-card .forgot-password:hover,.light-theme .login-card .forgot-password:hover { color:#893451; }
