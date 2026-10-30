@@ -129,3 +129,9 @@ Antes de ativar `EMAIL_2FA_REQUIRED=true`, crie usuários com e-mails reais na t
 O quadro de Demandas Internas compartilha os componentes, temas, calendário e ações acessíveis do Hospital. Possui distribuição por etapa, alternância Quadro/Lista, atalho `/` para busca e filtros combináveis de SLA e prioridade. A lista conserva os mesmos registros paginados e o botão de carregar concluídas.
 
 A consulta `GET /api/resources/demandas?view=board` aceita também `priority=Crítica|Alta|Média|Baixa` (opcional, ampliação autorizada). O filtro é aplicado antes da paginação e mantém as permissões existentes. Valores inválidos retornam 422. Não há alteração de schema, dependências ou variáveis de ambiente.
+
+### Relatórios
+
+A visão geral utiliza os indicadores e agrupamentos reais de `demandReport`, respeitando os filtros aplicados. Os atalhos de 7, 30 e 90 dias refazem a consulta existente; os gráficos agregam aberturas por dia, mês ou ano conforme o volume de datas. Taxa de conclusão, status, solicitantes distintos e desempenho por profissional são calculados a partir da mesma consulta.
+
+Os filtros podem ser recolhidos. As abas de Demandas, Exclusões, Inventário e Auditoria e as ações reais de exportação CSV e impressão permanecem disponíveis. Não é exibido tempo médio de resolução ou comparação com período anterior sem dados confiáveis. A tela reutiliza os temas do quadro; não adiciona endpoints, dependências, schema ou variáveis de ambiente.

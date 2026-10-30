@@ -1,0 +1,68 @@
+.hospital-workspace .content:has(> .reports-view) { min-width:0; height:100dvh; overflow:auto; padding:28px; border:0; border-radius:0; background:var(--hospital-page); color:var(--hospital-text); box-shadow:none; }
+.reports-view { display:grid; gap:22px; min-width:0; }
+.reports-view .topbar { margin:0; }
+.reports-view .page-title { color:var(--hospital-text); }
+.reports-header-actions { display:flex; gap:12px; align-items:center; justify-content:space-between; min-width:0; }
+.reports-view .report-actions { margin:0; padding:0; flex:1; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.reports-view .report-actions > span { margin-right:auto; font-size:12px; color:var(--hospital-muted); }
+.hospital-workspace .reports-view button.secondary { background:var(--hospital-card); color:var(--hospital-text); border:1px solid var(--hospital-control-border); box-shadow:none; }
+.hospital-workspace .reports-view .add-record { background:var(--hospital-primary); color:var(--hospital-on-primary); border:1px solid var(--hospital-primary); box-shadow:none; }
+.reports-view button, .reports-view input, .reports-view select { min-height:38px; font-size:13px; }
+.reports-view :is(button,input,select,summary):focus-visible { outline:2px solid var(--hospital-focus); outline-offset:3px; }
+.hospital-workspace .reports-view :is(input,select) { min-width:0; width:100%; border:1px solid var(--hospital-control-border); color:var(--hospital-text); background:var(--hospital-card); border-radius:7px; }
+.hospital-workspace .reports-view .report-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:6px; border-bottom:1px solid var(--hospital-border); margin:0; padding-bottom:8px; }
+.hospital-workspace .reports-view .report-tabs button { white-space:nowrap; background:none; color:var(--hospital-muted); padding:8px 14px; border:1px solid transparent; border-radius:7px; }
+.hospital-workspace .reports-view .report-tabs button.active { color:var(--hospital-accent); background:var(--hospital-accent-bg); border-color:var(--hospital-accent); }
+.hospital-workspace .reports-view :is(.panel,.metric,.reports-kpi,.reports-filter-panel) { background:var(--hospital-card); color:var(--hospital-text); border:1px solid var(--hospital-border); border-radius:12px; box-shadow:none; min-width:0; }
+.reports-filter-panel > summary { padding:16px 20px; font-size:14px; font-weight:600; cursor:pointer; }
+.reports-filter-panel > summary span { float:right; font-size:12px; color:var(--hospital-muted); font-weight:400; }
+.hospital-workspace .reports-filter-panel .demand-query-panel { border:0; margin:0; padding:0 20px 16px; }
+.reports-filter-panel .demand-query-panel > .panel-heading { display:none; }
+.reports-filter-panel .demand-query-fields { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.reports-view label { font-size:12px; color:var(--hospital-muted); }
+.reports-updated { margin:0; padding:0 20px 16px; font-size:12px; color:var(--hospital-muted); }
+.reports-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.reports-kpi { display:grid; gap:10px; padding:20px; }
+.reports-kpi > span { color:var(--hospital-muted); font-size:13px; }
+.reports-kpi strong { font-size:30px; line-height:1.2; font-variant-numeric:tabular-nums; }
+.reports-kpi small { font-size:12px; color:var(--hospital-muted); line-height:1.5; }
+.reports-section-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; }
+.reports-section-heading h2 { font-size:18px; margin:0 0 4px; }
+.reports-view :is(.reports-section-heading p,.panel-heading p) { margin:0; color:var(--hospital-muted); font-size:12px; line-height:1.5; }
+.reports-presets { display:flex; flex-wrap:wrap; gap:6px; }
+.reports-chart-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:20px; }
+.reports-view .panel-heading { padding:18px 20px; border-color:var(--hospital-border); }
+.reports-view .panel-heading h3 { color:var(--hospital-text); font-size:15px; }
+.reports-chart { overflow:hidden; }
+.reports-series { display:flex; align-items:end; gap:12px; overflow-x:auto; padding:12px 20px 24px; }
+.reports-series-item { display:grid; grid-template-rows:18px 150px 18px; flex:1 0 32px; text-align:center; gap:8px; font-size:12px; color:var(--hospital-muted); }
+.reports-series-item > div { display:flex; align-items:end; justify-content:center; border-bottom:1px solid var(--hospital-border); }
+.reports-series-item i { display:block; width:70%; max-width:45px; border-radius:4px 4px 0 0; background:var(--hospital-accent); }
+.reports-series-item b { color:var(--hospital-text); }
+.reports-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:24px; padding:20px; }
+.reports-donut { flex-shrink:0; width:160px; height:160px; display:grid; place-items:center; border-radius:50%; }
+.reports-donut > span { width:126px; height:126px; border-radius:50%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:4px; background:var(--hospital-card); font-size:12px; color:var(--hospital-muted); }
+.reports-donut strong { font-size:28px; color:var(--hospital-text); }
+.reports-status ul { list-style:none; margin:0; padding:0; flex:1; min-width:170px; }
+.reports-status li { display:grid; grid-template-columns:8px minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:7px 0; font-size:12px; }
+.reports-status li > span { overflow-wrap:anywhere; }
+.reports-status li i { width:8px; height:8px; border-radius:50%; }
+.reports-status li small { color:var(--hospital-muted); font-size:12px; }
+.reports-bottom-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:20px; align-items:start; }
+.hospital-workspace .reports-view .data-table { width:100%; color:var(--hospital-text); }
+.hospital-workspace .reports-view .data-table :is(th,td) { color:var(--hospital-text); background:transparent; border-color:var(--hospital-border); font-size:12px; padding:14px; overflow-wrap:anywhere; }
+.hospital-workspace .reports-view .data-table th { color:var(--hospital-muted); }
+.reports-table-scroll { overflow-x:auto; }
+.reports-table-scroll table { min-width:540px; }
+.report-rate { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+.report-rate progress { width:70px; height:8px; accent-color:var(--hospital-accent); }
+.reports-insights dl { margin:0; padding:4px 20px 20px; }
+.reports-insights dt { margin-top:14px; color:var(--hospital-muted); font-size:12px; }
+.reports-insights dd { margin:6px 0 0; font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.reports-module-summary summary { padding:12px 0; cursor:pointer; font-size:14px; }
+.reports-module-summary > p { font-size:12px; color:var(--hospital-muted); }
+.reports-view .empty { color:var(--hospital-muted); font-size:13px; }
+@media (max-width:1200px) { .reports-chart-grid,.reports-bottom-grid { grid-template-columns:minmax(0,1fr); } .reports-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:768px) { .hospital-workspace .content:has(> .reports-view) { padding:20px 16px; } .reports-filter-panel .demand-query-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } .reports-header-actions { align-items:start; } .reports-view .report-actions > span { width:100%; } }
+@media (max-width:420px) { .reports-kpis { gap:10px; } .reports-kpi { padding:14px; } .reports-kpi strong { font-size:26px; } .reports-filter-panel > summary { padding:14px; } .reports-filter-panel > summary span { float:none; display:block; margin-top:6px; } .reports-presets button { padding:8px; } }
+@media print { .reports-header-actions,.reports-filter-panel,.reports-presets,.reports-view .report-tabs { display:none !important; } .hospital-workspace .content:has(> .reports-view) { height:auto; overflow:visible; padding:0; } .reports-view .panel,.reports-kpi { break-inside:avoid; } .reports-view { --hospital-text:#111827; --hospital-muted:#4b5563; --hospital-card:#fff; --hospital-border:#d1d5db; } }
