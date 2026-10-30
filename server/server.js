@@ -1,5 +1,5 @@
 const { materialRequestAccess, canViewMaterialRequest, sanitizeMaterialRequest } = require('./domain/material-requests');
-const { demandBoardPage } = require('./domain/demand-board');
+const { demandBoardPage, validBoardDate } = require('./domain/demand-board');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -594,10 +594,10 @@ async function api(req, res, url) {
   const match = pathname.match(/^\/api\/resources\/([a-z]+)(?:\/([\w-]+))?$/); if (match) {
     const [, resource, recordId] = match; if (!resourceDefinitions[resource] || DISABLED_RESOURCES.has(resource)) return error(res, 404, 'Recurso não encontrado.'); const mode = req.method === 'GET' ? (recordId ? 'consult' : 'list') : req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'update' : 'delete'; if (!canAccess(user, resource, mode)) return error(res, 403, 'Você não tem permissão para esta área.');
     if (req.method === 'GET' && resource === 'demandas' && !recordId && url.searchParams.get('view') === 'board') {
-      const options = Object.fromEntries(['completedLimit', 'type', 'query', 'assignee', 'requester', 'createdDate', 'timezoneOffset'].map(key => [key, url.searchParams.get(key) || '']));
+      const options = Object.fromEntries(['completedLimit', 'type', 'query', 'assignee', 'requester', 'createdDate', 'createdStart', 'createdEnd', 'timezoneOffset'].map(key => [key, url.searchParams.get(key) || '']));
       const limit = Number(options.completedLimit || 25);
       const offset = Number(options.timezoneOffset || 0);
-      if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isInteger(offset) || Math.abs(offset) > 840 || (options.type && !['interna', 'externa'].includes(options.type)) || (options.createdDate && !/^\d{4}-\d{2}-\d{2}$/.test(options.createdDate)) || options.query.length > 1000 || options.assignee.length > 120 || options.requester.length > 120) return error(res, 422, 'Revise os filtros do quadro.');
+      if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isInteger(offset) || Math.abs(offset) > 840 || (options.type && !['interna', 'externa'].includes(options.type)) || ![options.createdDate, options.createdStart, options.createdEnd].every(validBoardDate) || (options.createdStart && options.createdEnd && options.createdStart > options.createdEnd) || options.query.length > 1000 || options.assignee.length > 120 || options.requester.length > 120) return error(res, 422, 'Revise os filtros do quadro.');
       return respond(res, 200, demandBoardPage(await store.demandBoardRecords(user), user, { ...options, completedLimit: limit, timezoneOffset: offset }));
     }
     if (req.method === 'GET') { let records; if (recordId) { const record = await store.record(resource, recordId); records = record ? [record] : []; } else records = resource === 'demandas' && store.demandSummaries ? await store.demandSummaries() : await store.records(resource); if (resource === 'pedidos') records = records.filter(record => canViewMaterialRequest(record, user)); if (resource === 'demandas') records = records.filter(record => demandBelongsToUser(record, user)); if (resource === 'demandas') { const people = new Map((await store.users()).map(person => [person.id, person.nome])); records = records.map(record => { const response = demandForResponse(record, Boolean(recordId)); return { ...response, interacoes: response.interacoes.map(item => ({ ...item, autorNome: people.get(item.autorId) || 'Usuário removido' })) }; }); } if (recordId && !records.length) return error(res, 404, 'Registro não encontrado.'); return respond(res, 200, { records }); }

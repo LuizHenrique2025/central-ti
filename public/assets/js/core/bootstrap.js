@@ -89,6 +89,7 @@ function applySidebarChrome() {
 
 function applyColorTheme() {
   document.body.classList.toggle('light-theme', colorTheme === 'light');
+  document.body.classList.toggle('dark', colorTheme !== 'light');
   let control = document.querySelector('.theme-toggle');
   if (!control) {
     control = document.createElement('label');
@@ -97,7 +98,14 @@ function applyColorTheme() {
     control.querySelector('input').onchange = toggleColorTheme;
     document.body.append(control);
   }
+  const target = document.querySelector('.hospital-theme-slot') || document.body;
+  if (control.parentElement !== target) target.append(control);
   const light = colorTheme === 'light';
+  if (target !== document.body) {
+    let icon = control.querySelector('.hospital-theme-icon');
+    if (!icon) { icon = document.createElement('span'); icon.className = 'hospital-theme-icon'; control.append(icon); }
+    if (icon.dataset.theme !== colorTheme) { icon.innerHTML = hospitalIcon(light ? 'moon' : 'sun'); icon.dataset.theme = colorTheme; }
+  }
   const label = light ? 'Ativar modo escuro' : 'Ativar modo claro';
   const input = control.querySelector('input');
   if (input.checked !== !light) input.checked = !light;
@@ -198,7 +206,7 @@ function injectPrintableReportTemplate() {
 }
 
 async function refreshInBackground() {
-  if (document.hidden || !state.token || !state.user || state.modal || state.formDirty || state.loading || state.backgroundRefreshing) return;
+  if (document.hidden || !state.token || !state.user || state.modal || state.formDirty || state.loading || state.backgroundRefreshing || state.hospitalPeriodOpen || document.querySelector?.('.hospital-card-menu[open]')) return;
   state.backgroundRefreshing = true;
   try {
     const demandPage = state.page === 'demandas' || state.page.startsWith('demandas-');
