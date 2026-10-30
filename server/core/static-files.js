@@ -11,6 +11,8 @@ const PUBLIC_FILES = new Set([
   '/assets/css/styles.css',
   '/assets/css/hospital-board.css',
   '/assets/js/features/hospital-board.js',
+  '/assets/js/features/internal-board.js',
+  '/assets/css/internal-board.css',
   '/assets/js/features/reports-view.js',
   '/assets/css/reports-view.css'
 ]);

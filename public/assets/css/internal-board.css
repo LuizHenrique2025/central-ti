@@ -1,0 +1,122 @@
+.internal-workspace {
+  --internal-page:#10151d;
+  --internal-column:#171e29;
+  --internal-surface:#1c2532;
+  --internal-border:#344155;
+  --internal-soft:#263246;
+  --internal-stage-open:#8aaaff;
+  --internal-stage-progress:#f4c46a;
+  --internal-stage-other:#bba6f4;
+  --internal-stage-completed:#9cdebb;
+  --internal-stage-neutral:#9aa4b2;
+  --internal-critical-bg:#3d2633;
+  --internal-high-bg:#382e20;
+  --internal-medium-bg:#29354b;
+  --internal-low-bg:#253a32;
+}
+.internal-workspace.light-theme {
+  --internal-page:#f6f7fc;
+  --internal-column:#fbfcfe;
+  --internal-surface:#fff;
+  --internal-border:#dfe5ef;
+  --internal-soft:#eef2f8;
+  --internal-stage-open:#3974d7;
+  --internal-stage-progress:#a87412;
+  --internal-stage-other:#7d5ac8;
+  --internal-stage-completed:#178464;
+  --internal-stage-neutral:#64748b;
+  --internal-critical-bg:#fceef2;
+  --internal-high-bg:#fff3e4;
+  --internal-medium-bg:#fff8df;
+  --internal-low-bg:#eaf6ee;
+}
+.internal-workspace .shell { background:var(--internal-page); }
+.internal-workspace .content:has(> .internal-kanban) { padding:24px 28px 16px; gap:16px; background:var(--internal-page); }
+.internal-workspace .hospital-topbar { gap:16px; }
+.internal-workspace .internal-topbar .page-heading { display:grid; gap:5px; }
+.internal-workspace .internal-topbar .internal-eyebrow { margin:0; font-size:12px; font-weight:600; letter-spacing:.08em; color:var(--hospital-muted); }
+.internal-workspace .internal-topbar .page-title { font-size:26px; letter-spacing:-.03em; }
+.internal-workspace .hospital-heading-actions :is(.hospital-manage-status,.hospital-add-demand) { min-height:38px; padding:8px 12px; font-size:12px; }
+.internal-workspace .internal-context { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; flex-shrink:0; }
+.internal-context > p { margin:0; color:var(--hospital-muted); font-size:12px; line-height:1.5; }
+.internal-workspace .internal-context .hospital-quick-filters { display:flex; gap:6px; }
+.internal-workspace .internal-context .hospital-quick-filter { min-height:30px; padding:5px 9px; border-radius:6px; font-size:12px; }
+.internal-workspace .internal-filter-panel { flex:0 0 auto; min-width:0; border:1px solid var(--internal-border); border-radius:14px; background:var(--internal-surface); overflow:visible; }
+.internal-workspace .internal-filterbar { display:grid; grid-template-columns:minmax(250px,1.7fr) minmax(130px,1fr) minmax(130px,1fr) minmax(155px,1fr) auto auto; gap:10px; align-items:end; padding:14px; margin:0; }
+.internal-workspace .internal-filterbar .hospital-search { min-width:0; margin:0; }
+.internal-workspace .internal-search-label { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.internal-workspace .internal-filterbar .hospital-filter-label { margin:0 0 6px; font-size:12px; font-weight:600; letter-spacing:.03em; }
+.internal-workspace .internal-filterbar :is(input.search,select,.hospital-period-trigger) { height:38px; min-height:38px; font-size:12px; border-radius:7px; background:var(--internal-surface); }
+.internal-workspace .internal-filterbar .hospital-search > span:last-child { position:relative; }
+.internal-workspace .internal-filterbar input.search { padding-right:28px; }
+.internal-filterbar kbd { position:absolute; right:9px; top:11px; display:grid; place-items:center; width:16px; height:17px; border:1px solid var(--internal-border); border-radius:3px; font:12px inherit; color:var(--hospital-muted); background:var(--internal-column); }
+.internal-workspace .internal-clear { min-height:38px; padding:8px; color:var(--hospital-muted); background:none; font-size:12px; font-weight:600; border-radius:6px; }
+.internal-workspace .internal-clear:hover { color:var(--hospital-accent); background:var(--hospital-accent-bg); }
+.internal-workspace .internal-view-switch { display:flex; align-self:end; flex-wrap:nowrap; gap:2px; padding:3px; border-radius:8px; background:var(--internal-soft); }
+.internal-workspace .internal-view-switch button { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:32px; padding:6px 9px; border:1px solid transparent; border-radius:6px; background:none; color:var(--hospital-muted); font-size:12px; font-weight:600; }
+.internal-workspace .internal-view-switch button[aria-pressed=true] { background:var(--internal-surface); color:var(--hospital-text); border-color:var(--internal-border); }
+.internal-workspace .internal-view-switch svg { width:14px; height:14px; }
+.internal-priority-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; padding:10px 14px; border-top:1px solid var(--internal-border); background:var(--internal-column); }
+.internal-control-label { color:var(--hospital-muted); font-size:12px; font-weight:600; letter-spacing:.03em; }
+.internal-workspace .internal-priorities { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.internal-workspace .internal-priorities button { display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:4px 10px; color:var(--hospital-text); background:var(--internal-surface); border:1px solid var(--internal-border); border-radius:999px; font-size:12px; }
+.internal-priorities button i { width:7px; height:7px; border-radius:50%; background:var(--hospital-priority-medium); }
+.internal-priorities .priority-critical i { background:var(--hospital-priority-critical); }
+.internal-priorities .priority-high i { background:var(--hospital-priority-high); }
+.internal-priorities .priority-low i { background:var(--hospital-priority-low); }
+.internal-workspace .internal-priorities button[aria-pressed=true] { color:var(--hospital-on-primary); background:var(--hospital-primary); border-color:var(--hospital-primary); }
+.internal-result-count { color:var(--hospital-muted); font-size:12px; white-space:nowrap; }
+.internal-flow { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:0 14px 12px; background:var(--internal-column); border-radius:0 0 14px 14px; }
+.internal-flow-track { display:flex; flex:1 1 200px; gap:2px; height:8px; overflow:hidden; border-radius:5px; background:var(--internal-soft); }
+.internal-flow-track > span { min-width:2px; border-radius:2px; }
+.internal-flow-legend { display:flex; flex-wrap:wrap; align-items:center; gap:7px 12px; }
+.internal-flow-legend > span { display:inline-flex; align-items:center; gap:5px; color:var(--hospital-muted); font-size:12px; }
+.internal-flow-legend i { width:7px; height:7px; border-radius:2px; }
+.internal-workspace .internal-stage-open { background:var(--internal-stage-open); }
+.internal-workspace .internal-stage-progress { background:var(--internal-stage-progress); }
+.internal-workspace .internal-stage-other { background:var(--internal-stage-other); }
+.internal-workspace .internal-stage-completed { background:var(--internal-stage-completed); }
+.internal-workspace .internal-stage-neutral { background:var(--internal-stage-neutral); }
+.internal-workspace .content > .hospital-kanban.internal-kanban { grid-template-columns:repeat(var(--internal-columns),minmax(260px,1fr)); grid-auto-flow:unset; grid-auto-columns:unset; gap:14px; overflow-x:auto; padding-bottom:6px; }
+.internal-workspace .internal-kanban .internal-column { width:auto; min-width:0; padding:0; border:1px solid var(--internal-border); border-radius:14px; background:var(--internal-column); }
+.internal-workspace .internal-kanban .hospital-column-heading { min-height:48px; padding:12px 14px; border-bottom:1px solid var(--internal-border); }
+.internal-workspace .internal-kanban .hospital-column-heading small { min-width:24px; padding:3px 6px; text-align:center; border-radius:999px; background:var(--internal-soft); color:var(--hospital-muted); }
+.internal-workspace .internal-kanban .hospital-column-cards { padding:10px 6px 10px 10px; gap:10px; }
+.internal-workspace .internal-kanban .internal-card { display:block; position:relative; flex:0 0 auto; width:100%; min-width:0; max-width:100%; padding:0; border:1px solid var(--internal-border); border-left:3px solid var(--hospital-priority-medium); border-radius:10px; color:var(--hospital-text); background:var(--internal-surface); box-shadow:none; transform:none; cursor:auto; }
+.internal-workspace .internal-kanban .internal-card.priority-critical { border-left-color:var(--hospital-priority-critical); }
+.internal-workspace .internal-kanban .internal-card.priority-high { border-left-color:var(--hospital-priority-high); }
+.internal-workspace .internal-kanban .internal-card.priority-low { border-left-color:var(--hospital-priority-low); }
+.internal-workspace .internal-kanban .internal-card:hover { background:var(--internal-surface); box-shadow:none; border-top-color:var(--hospital-control-border); border-right-color:var(--hospital-control-border); border-bottom-color:var(--hospital-control-border); }
+.internal-card-open { display:grid; width:100%; min-width:0; gap:7px; padding:11px 10px 9px; border:0; border-radius:9px 9px 0 0; text-align:left; color:inherit; background:none; cursor:pointer; }
+.internal-card-open:focus-visible { outline:2px solid var(--hospital-focus); outline-offset:-3px; }
+.internal-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
+.internal-ticket { max-width:65%; padding:2px 4px; border-radius:4px; background:var(--internal-soft); color:var(--hospital-muted); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.internal-priority { padding:3px 5px; border-radius:4px; color:var(--hospital-priority-medium); background:var(--internal-medium-bg); font-size:12px; font-weight:700; }
+.priority-critical .internal-priority { color:var(--hospital-priority-critical); background:var(--internal-critical-bg); }
+.priority-high .internal-priority { color:var(--hospital-priority-high); background:var(--internal-high-bg); }
+.priority-low .internal-priority { color:var(--hospital-priority-low); background:var(--internal-low-bg); }
+.internal-card-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; overflow-wrap:anywhere; font-size:14px; font-weight:600; line-height:1.4; }
+.internal-card-meta,.internal-card-requester { display:flex; align-items:center; gap:6px; min-width:0; color:var(--hospital-muted); font-size:12px; line-height:1.4; }
+.internal-workspace :is(.internal-card-meta,.internal-card-requester) > svg { width:13px; height:13px; flex-shrink:0; }
+.internal-card-meta > span,.internal-card-requester > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.internal-card-requester > span:last-child { color:var(--hospital-text); font-weight:500; }
+.internal-avatar { display:grid; place-items:center; width:20px; height:20px; flex-shrink:0; border-radius:50%; color:var(--hospital-muted); background:var(--internal-soft); font-size:12px; }
+.internal-workspace .internal-card-sla { justify-self:start; gap:4px; padding:4px 6px; border-radius:5px; font-size:12px; white-space:normal; overflow-wrap:anywhere; }
+.internal-card-actions { padding:0 10px 9px; }
+.internal-workspace .internal-card-actions .demand-card-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding-top:8px; border-top:1px solid var(--internal-border); }
+.internal-workspace .internal-card-actions :is(button.card-details,select) { height:32px; min-height:32px; min-width:0; padding:5px 7px; font-size:12px; border:1px solid var(--hospital-control-border); border-radius:5px; background:var(--internal-surface); color:var(--hospital-text); }
+.internal-workspace .internal-card-actions button.card-details { flex:1 1 auto; text-align:left; white-space:nowrap; color:var(--hospital-accent); }
+.internal-workspace .internal-card-actions select { flex:1 1 45%; width:45%; max-width:55%; }
+.internal-workspace .internal-card-actions > button.card-details { width:100%; margin-top:7px; }
+.internal-workspace .content > .internal-kanban.internal-list-view { display:block; overflow:auto; }
+.internal-workspace .internal-list-view .hospital-column-cards { overflow:visible; }
+.internal-workspace .internal-list-view .internal-card-open { grid-template-columns:140px minmax(0,2fr) minmax(0,1.5fr) minmax(0,1.5fr) minmax(0,1.5fr); align-items:center; gap:14px; }
+.internal-workspace .internal-list-view .internal-column { margin-bottom:14px; }
+.internal-workspace .internal-list-view .internal-card-actions .demand-card-actions { justify-content:flex-end; }
+.internal-workspace .internal-list-view .internal-card-actions :is(button.card-details,select) { flex:0 1 180px; width:180px; }
+@media (max-width:1100px) { .internal-workspace .internal-filterbar { grid-template-columns:minmax(250px,1.5fr) repeat(2,minmax(140px,1fr)); } .internal-workspace .internal-filterbar .hospital-period { grid-column:1; } .internal-workspace .internal-clear { justify-self:start; } .internal-workspace .internal-view-switch { justify-self:end; } }
+@media (max-width:1100px) { .internal-workspace .internal-list-view .internal-card-open { grid-template-columns:140px minmax(0,1fr); } }
+@media (max-width:768px) { .internal-workspace .content:has(> .internal-kanban) { padding:20px 16px 12px; gap:12px; } .internal-workspace .internal-filterbar { grid-template-columns:repeat(2,minmax(0,1fr)); } .internal-workspace .internal-filterbar .hospital-search { grid-column:1/-1; } .internal-workspace .internal-filterbar .hospital-period { grid-column:1/-1; } .internal-context > p { display:none; } }
+@media (max-width:540px) { .internal-workspace .internal-topbar .internal-eyebrow { font-size:12px; letter-spacing:0; } .internal-workspace .internal-topbar .page-title { font-size:24px; } .internal-workspace .internal-filterbar { gap:10px; padding:12px; } .internal-workspace .internal-filterbar :is(.hospital-filter-label,input.search) { font-size:12px; } .internal-workspace .internal-priority-row { padding:10px 12px; } .internal-workspace .internal-result-count { width:100%; } .internal-workspace .internal-flow { padding:0 12px 12px; } .internal-flow-legend { width:100%; } .internal-workspace .internal-list-view .internal-card-open { display:grid; grid-template-columns:minmax(0,1fr); } }
+
+.internal-workspace.light-theme .content > .hospital-kanban .internal-column { background:var(--internal-column); border-color:var(--internal-border); }
