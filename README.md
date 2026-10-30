@@ -136,7 +136,7 @@ A visão geral utiliza os indicadores e agrupamentos reais de `demandReport`, re
 
 Os filtros podem ser recolhidos. As abas de Demandas, Exclusões, Inventário e Auditoria e as ações reais de exportação CSV e impressão permanecem disponíveis. Não é exibido tempo médio de resolução ou comparação com período anterior sem dados confiáveis. A tela reutiliza os temas do quadro; não adiciona endpoints, dependências, schema ou variáveis de ambiente.
 
-A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. As ações no rodapé reutilizam os controles de abertura e status existentes. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; o Hospital conserva seu card e suas colunas recolhíveis. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.
+A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. A abertura ocorre pelo card e as ações de status ficam no menu acessível compartilhado com o Hospital. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; os dois tipos reutilizam o mesmo card e as colunas recolhíveis. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.
 
 ### Padrão visual compartilhado
 
@@ -149,3 +149,9 @@ O contêiner da aplicação é neutro, com um único landmark principal por tela
 A apresentação de login está em `public/assets/js/features/login-view.js` e `public/assets/css/login-view.css`, com layout responsivo, laço SVG e temas claro/escuro. Identificação, senha, primeiro acesso, código de verificação e troca obrigatória usam os mesmos handlers e validações existentes. O controle de tema fica no rodapé da tela de acesso. A ajuda continua orientando a procurar o administrador; não cria solicitação ou canal externo.
 
 A campanha Novembro Azul segue a referência solicitada e não possui agendamento automático. Os estilos ficam restritos à classe `auth-page`. Registro local do escopo: `docs/issues/nova-tela-login.md`. Nenhuma API, tabela, dependência ou variável de ambiente foi acrescentada.
+
+### Quadros de demandas unificados
+
+Demandas Internas e Demandas Hospital usam a mesma montagem de filtros, prioridades, fluxo, cards, menus e visão de lista. A página determina o tipo consultado e a identificação do contexto. Os cards abrem por botão semântico; ações de status ficam no menu acessível e o arraste respeita as permissões existentes. Não há botão redundante nem select no card. Colunas vazias podem ser expandidas no Kanban, com Aberta sempre aberta; na Lista, as etapas permanecem expandidas.
+
+Prioridade, período, responsável e solicitante reutilizam a consulta de quadro existente nos dois tipos, com paginação de concluídas e totais por consulta. Escopo local: `docs/issues/unifica-quadros-demandas.md`. Nenhum contrato de API, schema ou variável de ambiente foi alterado.

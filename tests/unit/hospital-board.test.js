@@ -160,13 +160,13 @@ test('ações que recarregam o próprio quadro interno preservam o período', as
 });
 
 
-test('cards internos preservam ações existentes e não inferem SLA cumprido', () => {
+test('cards compartilhados preservam ações por menu e não inferem SLA cumprido', () => {
   const ui = context();
   const card = { id: 'i1', ticket: 'TI-0001', titulo: '<img src=x onerror=alert(1)>', status: 'Concluída', prioridade: 'Alta', solicitante: 'Pessoa', prazoSla: '2026-10-01' };
   const html = ui.internalDemandCard(card);
   assert.match(html, /internal-card priority-high/);
-  assert.match(html, /data-action="move-demand"/);
-  assert.match(html, /Abrir demanda/);
+  assert.match(html, /data-action="hospital-move-status"/);
+  assert.match(html, /data-action="demand-details"/);
   assert.match(html, /Concluída/);
   assert(!html.includes('cumprido'));
   assert(!html.includes('<img'));
@@ -177,7 +177,7 @@ test('cards internos preservam ações existentes e não inferem SLA cumprido', 
   assert.match(view, /data-action="demand-details"/);
 });
 
-test('fluxo interno usa contagens do histórico e mantém todas as etapas visíveis', () => {
+test('fluxo usa contagens do histórico e mantém etapas vazias acessíveis pelos trilhos', () => {
   const ui = context();
   ui.state.demandPagination = {totals: {'Aberta': 2, 'Concluída': 430}};
   const columns = ui.internalBoardColumns([]);
@@ -185,5 +185,35 @@ test('fluxo interno usa contagens do histórico e mantém todas as etapas visív
   assert.match(html, /432 demandas/);
   assert.match(html, /flex-grow:430/);
   assert.match(html, /Tdsa/);
-  assert(!ui.internalDemandBoard().includes('hospital-column-rail'));
+  assert(ui.internalDemandBoard().includes('hospital-column-rail'));
+});
+
+
+test('Internas e Hospital usam os mesmos componentes sem misturar os registros', () => {
+  const ui = context();
+  ui.state.records = [{id:'i1',tipo:'interna',titulo:'Atividade da equipe',status:'Aberta',prioridade:'Alta'},{id:'h1',tipo:'externa',titulo:'Atendimento hospitalar',status:'Aberta',prioridade:'Alta'}];
+  for (const [type, ownTitle, otherTitle] of [['interna','Atividade da equipe','Atendimento hospitalar'],['externa','Atendimento hospitalar','Atividade da equipe']]) {
+    const html = ui.hospitalDemandBoard(type);
+    assert.match(html, /internal-filter-panel/);
+    assert.match(html, /internal-flow/);
+    assert.match(html, /internal-view-switch/);
+    assert.match(html, /hospital-card-menu/);
+    assert(html.includes(ownTitle));
+    assert(!html.includes(otherTitle));
+    assert(html.includes(`data-demand-type="${type}"`));
+    ui.state.internalBoardView = 'list';
+    assert.match(ui.hospitalDemandBoard(type), /internal-list-view/);
+    assert(!ui.hospitalDemandBoard(type).includes('class="hospital-collapse-column"'));
+    ui.state.internalBoardView = 'kanban';
+  }
+});
+
+test('os dois quadros oferecem a mesma estrutura de card para os mesmos dados', () => {
+  const ui = context();
+  const card = {id:'d1',ticket:'TI-0001',titulo:'Teste de apresentação',status:'Aberta',prioridade:'Alta',solicitante:'Pessoa de teste'};
+  assert.equal(ui.internalDemandCard(card), ui.hospitalCard(card));
+  assert(!ui.internalDemandCard(card).includes('data-action="move-demand"'));
+  ui.state.records = [{...card,tipo:'externa'}];
+  ui.state.internalPriority = 'Baixa';
+  assert(!ui.internalDemandBoard('externa').includes('Teste de apresentação'));
 });
