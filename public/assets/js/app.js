@@ -606,7 +606,7 @@ async function load(options = {}) {
 async function go(page) {
   state.hospitalPeriodOpen = false;
   if (page !== state.page) { state.hospitalSlaFilter = ''; state.internalPriority = ''; }
-  if (page !== state.page || page !== 'demandas-externas') { state.demandCreatedStart = ''; state.demandCreatedEnd = ''; }
+  if (page !== state.page) { state.demandCreatedStart = ''; state.demandCreatedEnd = ''; }
   state.demandPagination = null;
   clearTimeout(searchTimer);
   completedVisible = COMPLETED_PAGE_SIZE;

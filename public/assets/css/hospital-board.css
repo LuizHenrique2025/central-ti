@@ -217,3 +217,8 @@
 .hospital-workspace .internal-list-view .hospital-card-top { display:flex; flex-wrap:wrap; }
 @media (max-width:1100px) { .hospital-workspace .internal-list-view .hospital-card-open { grid-template-columns:140px minmax(0,1fr); } }
 @media (max-width:540px) { .hospital-workspace .internal-list-view .hospital-card-open { display:flex; } .hospital-workspace .content:has(> .hospital-kanban) { gap:12px; } }
+
+.hospital-workspace .hospital-kanban.internal-list-view .hospital-column { width:100%; }
+.hospital-workspace.dark { color-scheme:dark; }
+.hospital-workspace.light-theme { color-scheme:light; }
+@media (max-width:540px), (max-height:740px) { .hospital-workspace .content:has(> .hospital-kanban) { overflow-y:auto; } }

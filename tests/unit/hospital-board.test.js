@@ -142,3 +142,16 @@ test('Internas reutiliza ações acessíveis e alterna para lista sem renomear s
   ui.state.internalPriority = 'Baixa';
   assert(!ui.hospitalDemandBoard('interna').includes('Atividade interna'));
 });
+
+test('ações que recarregam o próprio quadro interno preservam o período', async () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  const state = { page: 'demandas-internas', demandCreatedStart: '2026-10-01', demandCreatedEnd: '2026-10-03' };
+  const ui = vm.createContext({ state, clearTimeout: () => {}, searchTimer: null, completedVisible: 25, COMPLETED_PAGE_SIZE: 25, navigationRequest: 0, mobileNavigationOpen: false, load: async () => {}, render: () => {} });
+  vm.runInContext(app.slice(app.indexOf('async function go('), app.indexOf('function reloadDemandBoard(')), ui);
+  await ui.go('demandas-internas');
+  assert.equal(state.demandCreatedStart, '2026-10-01');
+  assert.equal(state.demandCreatedEnd, '2026-10-03');
+  await ui.go('demandas-externas');
+  assert.equal(state.demandCreatedStart, '');
+  assert.equal(state.demandCreatedEnd, '');
+});
