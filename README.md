@@ -95,6 +95,25 @@ conteúdo das conversas. A caixa de e-mail completa é consultada ao abrir essa 
 A atualização ocorre a cada 15 segundos nas telas visíveis; horários de
 sincronização, isoladamente, não provocam reconstrução da interface.
 
+### Quadro Demandas Hospital
+
+O quadro Hospital usa cards inteiros como botões de detalhes. Quem pode alterar
+demandas também encontra um menu de status no card e pode arrastá-lo entre
+colunas. Colunas vazias ficam em trilhos expansíveis; **Aberta** permanece aberta.
+Os filtros rápidos de SLA podem ser ativados e desativados sem novas consultas.
+
+O calendário de abertura seleciona início e fim e aplica o período após a segunda
+seleção. As setas navegam pelos dias, Page Up/Down trocam o mês e Escape fecha.
+A API do quadro aceita `createdStart` e `createdEnd` no formato `YYYY-MM-DD`,
+inclusive nas duas extremidades, com o `timezoneOffset` do usuário. O parâmetro
+anterior `createdDate` continua disponível para uma única data. Datas inválidas
+ou um período invertido retornam HTTP 422. Nenhuma migração é necessária.
+
+Uma demanda concluída é identificada como **Concluída**: o quadro não afirma
+cumprimento de SLA sem uma data de conclusão confiável. Temas e componentes
+usam a estrutura HTML/CSS/JavaScript existente; a classe `dark` é um alias do
+tema escuro, preservando a compatibilidade com `light-theme`.
+
 ## Backup
 
 No modo de arquivo local, a Central TI cria um backup diário em `backups/` e mantém os 30 mais recentes. Um administrador também pode gerar um backup imediato na tela **Usuários**. Essa pasta é ignorada pelo Git e não é publicada no GitHub.

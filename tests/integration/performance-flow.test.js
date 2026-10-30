@@ -64,6 +64,13 @@ test('quadro paginado, painel e resumo de mensagens preservam dados e acesso por
     assert.equal(assignee.records.length, 1);
     const dated = await get('/api/resources/demandas?view=board&createdDate=2026-09-30&timezoneOffset=180');
     assert.equal(dated.records.length, 1);
+    const period = await get('/api/resources/demandas?view=board&createdStart=2026-09-30&createdEnd=2026-10-01&timezoneOffset=180');
+    assert.equal(period.records.length, 2, 'período inclui as duas datas no fuso do usuário');
+    const emptyPeriod = await get('/api/resources/demandas?view=board&createdStart=2026-01-01&createdEnd=2026-01-02');
+    assert.equal(emptyPeriod.records.length, 0);
+    for (const params of ['createdStart=2026-02-30', 'createdStart=2026-10-02&createdEnd=2026-10-01', 'createdDate=2026-13-01']) {
+      assert.equal((await fetch(`${baseUrl}/api/resources/demandas?view=board&${params}`, { headers: { authorization: `Bearer ${adminToken}` } })).status, 422);
+    }
     const own = await get('/api/resources/demandas?view=board&completedLimit=75', userToken);
     assert.equal(own.records.length, 31);
     assert(own.records.every(record => record.createdBy === requester.id));

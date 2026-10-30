@@ -5,6 +5,13 @@ const { isCompletedDemandStatus } = require('./exclusion-rules');
 const demandBoardFields = ['ticket', 'titulo', 'solicitante', 'solicitanteId', 'tipo', 'categoria', 'assunto', 'tecnicoResponsavel', 'empresa', 'prioridade', 'status', 'prazoSla'];
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
+function validBoardDate(value) {
+  if (!value) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function boardRecord(record) {
   return Object.fromEntries(['id', ...demandBoardFields, 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'].map(key => [key, record[key]]));
 }
@@ -27,9 +34,13 @@ function demandBoardPage(records, user, options = {}) {
     if (options.assignee === '__unassigned__' && assignee) return false;
     if (options.assignee && !['__mine__', '__unassigned__'].includes(options.assignee) && assignee !== options.assignee) return false;
     if (options.requester && String(record.solicitante || '').trim() !== options.requester) return false;
-    if (options.createdDate) {
+    if (options.createdDate || options.createdStart || options.createdEnd) {
       const date = new Date(new Date(record.createdAt).getTime() - Number(options.timezoneOffset || 0) * 60000);
-      if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== options.createdDate) return false;
+      if (Number.isNaN(date.getTime())) return false;
+      const day = date.toISOString().slice(0, 10);
+      const start = options.createdDate || options.createdStart;
+      const end = options.createdDate || options.createdEnd;
+      if ((start && day < start) || (end && day > end)) return false;
     }
     return true;
   }).sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)) || String(b.id).localeCompare(String(a.id)));
@@ -46,4 +57,4 @@ function demandBoardPage(records, user, options = {}) {
   return { records: page, pagination: { completedLimit, totals, filters } };
 }
 
-module.exports = { demandBoardFields, boardRecord, demandBoardPage };
+module.exports = { demandBoardFields, boardRecord, demandBoardPage, validBoardDate };

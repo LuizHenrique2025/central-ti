@@ -8,7 +8,9 @@ const PUBLIC_FILES = new Set([
   '/assets/js/core/safe-render.js',
   '/assets/js/app.js',
   '/assets/js/core/bootstrap.js',
-  '/assets/css/styles.css'
+  '/assets/css/styles.css',
+  '/assets/css/hospital-board.css',
+  '/assets/js/features/hospital-board.js'
 ]);
 
 function createStaticFileHandler(publicDirectory) {

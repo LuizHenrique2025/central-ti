@@ -1,0 +1,204 @@
+/* Quadro Hospital: tokens locais preservam as demais superfícies da Central. */
+.hospital-workspace {
+  --hospital-page:#0e1116;
+  --hospital-sidebar:#12161c;
+  --hospital-column:#161b22;
+  --hospital-card:#1c222b;
+  --hospital-border:#262d37;
+  --hospital-card-border:#64748b;
+  --hospital-control-border:#64748b;
+  --hospital-text:#e6e9ee;
+  --hospital-muted:#9aa4b2;
+  --hospital-accent:#8aaaff;
+  --hospital-accent-bg:#1c2c4d;
+  --hospital-primary:#2447d6;
+  --hospital-on-primary:#fff;
+  --hospital-focus:#8aaaff;
+  --hospital-hover:#253040;
+  --hospital-avatar:#2b394d;
+  --hospital-priority-critical:#ff9ca6;
+  --hospital-priority-high:#f4c46a;
+  --hospital-priority-medium:#9db8ff;
+  --hospital-priority-low:#9cdebb;
+  --sla-danger-bg:#351d25;
+  --sla-danger-fg:#ffb1b9;
+  --sla-warning-bg:#352b18;
+  --sla-warning-fg:#f5d18a;
+  --sla-ok-bg:#153326;
+  --sla-ok-fg:#9cdebb;
+  --sla-neutral-bg:#242d38;
+  --sla-neutral-fg:#cbd5e1;
+  --ink:var(--hospital-text);
+  --muted:var(--hospital-muted);
+  --line:var(--hospital-border);
+  --blue:var(--hospital-accent);
+  background:var(--hospital-page);
+  color:var(--hospital-text);
+}
+.hospital-workspace.light-theme {
+  --hospital-page:#f3f4f6;
+  --hospital-sidebar:#fff;
+  --hospital-column:#e9ebef;
+  --hospital-card:#fff;
+  --hospital-border:#e5e7eb;
+  --hospital-card-border:#8591a1;
+  --hospital-control-border:#778497;
+  --hospital-text:#111827;
+  --hospital-muted:#4b5563;
+  --hospital-accent:#2447d6;
+  --hospital-accent-bg:#e6ecff;
+  --hospital-focus:#2447d6;
+  --hospital-hover:#f1f4fa;
+  --hospital-avatar:#e6ecf6;
+  --hospital-priority-critical:#b42339;
+  --hospital-priority-high:#875b00;
+  --hospital-priority-medium:#2447d6;
+  --hospital-priority-low:#176b49;
+  --sla-danger-bg:#fff0f2;
+  --sla-danger-fg:#a1263b;
+  --sla-warning-bg:#fff5db;
+  --sla-warning-fg:#7c5200;
+  --sla-ok-bg:#e9f6ee;
+  --sla-ok-fg:#176343;
+  --sla-neutral-bg:#edf0f5;
+  --sla-neutral-fg:#425166;
+}
+.nav-icon svg { display:block; width:18px; height:18px; }
+.hospital-workspace svg { display:block; width:18px; height:18px; flex-shrink:0; }
+.hospital-workspace .shell { height:100dvh; min-height:0; grid-template-columns:240px minmax(0,1fr); gap:0; padding:0; background:var(--hospital-page); }
+.hospital-workspace .shell.sidebar-collapsed { grid-template-columns:76px minmax(0,1fr); }
+.hospital-workspace .sidebar { border:0; border-right:1px solid var(--hospital-border); border-radius:0; background:var(--hospital-sidebar); box-shadow:none; padding:24px 14px; }
+.hospital-workspace .brand-lockup { color:var(--hospital-text); }
+.hospital-workspace .brand-mark { color:var(--hospital-accent); background:var(--hospital-accent-bg); box-shadow:none; }
+.hospital-workspace .nav button { color:var(--hospital-muted); min-height:44px; border:1px solid transparent; border-radius:7px; }
+.hospital-workspace .shell .sidebar .nav button.active { color:var(--hospital-accent); background:var(--hospital-accent-bg); border-color:transparent; box-shadow:none; }
+.hospital-workspace .nav button:hover { color:var(--hospital-text); background:var(--hospital-hover); }
+.hospital-workspace .shell .sidebar .nav .nav-icon { color:inherit; background:none; box-shadow:none; border-radius:0; }
+.hospital-workspace .nav-section,.hospital-workspace .user-role { color:var(--hospital-muted); font-size:12px; }
+.hospital-workspace .user-name { color:var(--hospital-text); }
+.hospital-workspace .content:has(> .hospital-kanban) { display:flex; flex-direction:column; gap:20px; height:100dvh; min-width:0; padding:28px 28px 20px; overflow:hidden; border:0; border-radius:0; background:var(--hospital-page); box-shadow:none; }
+.hospital-workspace .hospital-topbar { flex:0 0 auto; align-items:center; gap:20px; margin:0; }
+.hospital-topbar .page-heading { min-width:0; }
+.hospital-topbar .page-title { color:var(--hospital-text); font-family:inherit; font-size:28px; line-height:1.2; letter-spacing:-.02em; margin:0; }
+.hospital-topbar .page-heading p { margin:7px 0 0; color:var(--hospital-muted); font-size:13px; }
+.hospital-heading-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.hospital-manage-status,.hospital-add-demand { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; border:1px solid var(--hospital-control-border); border-radius:7px; padding:10px 14px; color:var(--hospital-text); background:var(--hospital-card); font-size:13px; font-weight:600; }
+.hospital-add-demand { color:var(--hospital-on-primary); border-color:var(--hospital-primary); background:var(--hospital-primary); }
+.hospital-manage-status:hover { background:var(--hospital-hover); }
+.hospital-add-demand:hover { filter:brightness(1.1); }
+.hospital-theme-slot { display:flex; align-items:center; justify-content:center; width:44px; height:44px; }
+.hospital-workspace .hospital-theme-slot .ui-switch.theme-toggle { position:relative; inset:auto; z-index:auto; display:grid; place-items:center; width:44px; height:44px; margin:0; border:1px solid var(--hospital-control-border); border-radius:7px; background:var(--hospital-card); color:var(--hospital-text); box-shadow:none; }
+.hospital-theme-slot .theme-toggle .slider { display:none; }
+.hospital-theme-slot .theme-toggle input { position:absolute; inset:0; display:block; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+.hospital-theme-icon { pointer-events:none; }
+.hospital-theme-slot .theme-toggle:has(input:focus-visible),.hospital-workspace button:focus-visible,.hospital-workspace summary:focus-visible,.hospital-workspace input:focus-visible,.hospital-workspace select:focus-visible { outline:2px solid var(--hospital-focus); outline-offset:3px; }
+.hospital-filterbar { flex:0 0 auto; display:grid; grid-template-columns:minmax(280px,1.7fr) minmax(145px,1fr) minmax(145px,1fr) minmax(170px,1fr); align-items:end; gap:12px; min-width:0; padding-bottom:2px; }
+.hospital-search,.hospital-filter-field,.hospital-period { display:grid; gap:7px; min-width:0; margin:0; }
+.hospital-filter-label { font-size:12px; line-height:1.3; font-weight:600; color:var(--hospital-muted); }
+.hospital-search > span:last-child { position:relative; min-width:0; }
+.hospital-search svg { position:absolute; inset:13px auto auto 12px; color:var(--hospital-muted); pointer-events:none; }
+.hospital-filterbar input.search,.hospital-filterbar select,.hospital-period-trigger { width:100%; min-width:0; height:44px; padding:10px 12px; border:1px solid var(--hospital-control-border); border-radius:7px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; font:inherit; font-size:13px; }
+.hospital-filterbar input.search { padding-left:39px; }
+.hospital-filterbar input::placeholder { color:var(--hospital-muted); opacity:1; }
+.hospital-filterbar select { text-overflow:ellipsis; }
+.hospital-period { position:relative; }
+.hospital-period-trigger { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
+.hospital-period-trigger span { min-width:0; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.hospital-period-trigger > svg:last-child { width:14px; height:14px; transform:rotate(90deg); }
+.hospital-quick-filters { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; grid-column:1/-1; min-width:0; }
+.hospital-quick-filter { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:8px 12px; border:1px solid transparent; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+.hospital-quick-filter svg { width:15px; height:15px; }
+.hospital-quick-filter b { font-size:12px; font-variant-numeric:tabular-nums; }
+.hospital-quick-filter[aria-pressed="true"] { border-color:currentColor; outline:1px solid currentColor; outline-offset:1px; }
+.sla-danger { color:var(--sla-danger-fg); background:var(--sla-danger-bg); }
+.sla-warning { color:var(--sla-warning-fg); background:var(--sla-warning-bg); }
+.sla-ok { color:var(--sla-ok-fg); background:var(--sla-ok-bg); }
+.sla-neutral { color:var(--sla-neutral-fg); background:var(--sla-neutral-bg); }
+.hospital-workspace .content > .hospital-kanban { display:grid; grid-template-columns:var(--hospital-columns); align-items:stretch; flex:1 1 auto; min-width:0; min-height:200px; width:100%; gap:12px; margin:0; padding:0 0 4px; overflow-x:hidden; overflow-y:hidden; scrollbar-gutter:auto; }
+.hospital-workspace .hospital-kanban .hospital-column { display:flex; flex-direction:column; flex:none; width:auto; min-width:0; min-height:0; padding:12px; border:1px solid var(--hospital-border); border-radius:12px; background:var(--hospital-column); }
+.hospital-kanban .hospital-column-heading { display:flex; flex:0 0 auto; align-items:center; gap:8px; min-height:38px; padding:0 2px 10px; }
+.hospital-column-heading h2 { flex:1; min-width:0; margin:0; color:var(--hospital-text); font-family:inherit; font-size:13px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+.hospital-workspace .hospital-kanban .hospital-column-heading small { flex-shrink:0; margin:0; padding:2px 5px; color:var(--hospital-muted); background:none; font-size:12px; font-variant-numeric:tabular-nums; }
+.hospital-kanban .kanban-dot { width:8px; height:8px; flex-shrink:0; background:var(--hospital-muted); }
+.hospital-kanban .kanban-dot.tone-open { background:var(--hospital-accent); }
+.hospital-kanban .kanban-dot.tone-progress { background:var(--hospital-priority-high); }
+.hospital-kanban .kanban-dot.tone-completed { background:var(--hospital-priority-low); }
+.hospital-workspace .hospital-kanban .hospital-column-cards { display:flex; flex-direction:column; align-items:stretch; gap:10px; min-width:0; min-height:0; padding:1px 4px 4px 1px; overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--hospital-control-border) var(--hospital-column); scrollbar-gutter:stable; }
+.hospital-column-cards::-webkit-scrollbar { width:6px; }
+.hospital-column-cards::-webkit-scrollbar-thumb { border-radius:4px; background:var(--hospital-control-border); }
+.hospital-workspace .hospital-kanban .hospital-card { position:relative; display:block; flex:0 0 auto; width:100%; min-width:0; max-width:100%; padding:0; border:1px solid var(--hospital-card-border); border-radius:12px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; transform:none; cursor:auto; }
+.hospital-workspace .hospital-kanban .hospital-card:hover { border-color:var(--hospital-focus); background:var(--hospital-card); box-shadow:none; }
+.hospital-card-open { display:grid; gap:12px; width:100%; min-width:0; max-width:100%; padding:16px 14px; text-align:left; color:inherit; background:none; border:0; border-radius:11px; cursor:pointer; overflow:hidden; }
+.hospital-card-open:hover { background:var(--hospital-hover); }
+.hospital-card-open:focus-visible { outline-offset:-3px!important; }
+.hospital-card-top { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; min-width:0; padding-right:32px; }
+.hospital-ticket { color:var(--hospital-muted); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:.02em; overflow-wrap:anywhere; }
+.hospital-priority { display:inline-flex; align-items:center; gap:5px; margin-left:auto; color:var(--hospital-text); font-size:12px; font-weight:600; }
+.hospital-priority i { width:7px; height:7px; border-radius:1px; background:var(--hospital-priority-medium); }
+.priority-critical i { background:var(--hospital-priority-critical); }
+.priority-high i { background:var(--hospital-priority-high); }
+.priority-low i { background:var(--hospital-priority-low); }
+.hospital-card-title { display:-webkit-box; min-width:0; margin:0; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; overflow-wrap:anywhere; color:var(--hospital-text); font-size:16px; font-weight:600; line-height:1.4; }
+.hospital-card-meta { display:block; min-width:0; max-width:100%; color:var(--hospital-muted); font-size:13px; line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hospital-card-footer { display:flex; align-items:center; flex-wrap:wrap; gap:9px; min-width:0; border-top:1px solid var(--hospital-border); padding-top:12px; }
+.hospital-requester { display:flex; flex:1 1 95px; align-items:center; gap:7px; min-width:0; }
+.hospital-avatar { display:grid; place-items:center; flex:0 0 26px; width:26px; height:26px; border-radius:50%; color:var(--hospital-text); background:var(--hospital-avatar); font-size:12px; font-weight:600; }
+.hospital-requester-name { display:block; min-width:0; color:var(--hospital-muted); font-size:13px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hospital-sla { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; max-width:100%; padding:5px 6px; border-radius:4px; font-size:12px; line-height:1.3; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.hospital-sla svg { width:13px; height:13px; }
+.hospital-card-menu { position:absolute; z-index:2; top:2px; right:2px; }
+.hospital-card-menu[open] { z-index:8; }
+.hospital-card-menu summary { display:grid; place-items:center; width:44px; height:44px; border-radius:6px; color:var(--hospital-muted); cursor:pointer; list-style:none; }
+.hospital-card-menu summary::-webkit-details-marker { display:none; }
+.hospital-card-menu summary:hover { color:var(--hospital-text); background:var(--hospital-hover); }
+.hospital-status-menu { position:fixed; z-index:30; display:grid; width:210px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 24px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--hospital-control-border) var(--hospital-card); padding:5px; border:1px solid var(--hospital-control-border); border-radius:7px; background:var(--hospital-card); }
+.hospital-status-menu > span { padding:7px 9px; color:var(--hospital-muted); font-size:12px; }
+.hospital-status-menu button { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:44px; padding:9px; border-radius:4px; background:none; color:var(--hospital-text); font-size:13px; text-align:left; overflow-wrap:anywhere; }
+.hospital-status-menu button:hover { background:var(--hospital-hover); }
+.hospital-status-menu button:disabled { color:var(--hospital-muted); cursor:default; }
+.hospital-column-empty { margin:0; padding:24px 8px; color:var(--hospital-muted); font-size:12px; line-height:1.5; text-align:center; overflow-wrap:anywhere; }
+.hospital-column-cards > .secondary { min-width:0; min-height:44px; padding:10px 8px; border:1px solid var(--hospital-control-border); background:var(--hospital-card); color:var(--hospital-text); font-size:12px; }
+.hospital-column-cards > .hospital-more-completed { display:flex; align-items:center; justify-content:center; gap:6px; border-style:dashed; background:transparent; color:var(--hospital-muted); font-size:13px; }
+.hospital-more-completed b { font-variant-numeric:tabular-nums; }
+.hospital-workspace .hospital-kanban .hospital-column-collapsed { padding:0; }
+.hospital-column-rail { display:flex; flex-direction:column; align-items:center; flex:1; gap:13px; width:42px; min-height:200px; padding:14px 5px; color:var(--hospital-muted); background:none; border-radius:8px; font-size:12px; }
+.hospital-column-rail > span:not(.kanban-dot) { writing-mode:vertical-rl; text-orientation:mixed; font-weight:600; }
+.hospital-column-rail b { font-variant-numeric:tabular-nums; }
+.hospital-column-rail > svg { width:14px; height:14px; margin-top:auto; }
+.hospital-column-rail:hover { color:var(--hospital-text); background:var(--hospital-hover); }
+.hospital-collapse-column { display:grid; place-items:center; width:30px; min-width:30px; height:32px; padding:0; color:var(--hospital-muted); background:none; }
+.hospital-collapse-column svg { width:14px; height:14px; transform:rotate(180deg); }
+.hospital-period-popover { position:absolute; top:calc(100% + 8px); right:0; z-index:15; width:300px; padding:12px; border:1px solid var(--hospital-control-border); border-radius:9px; background:var(--hospital-card); color:var(--hospital-text); }
+.hospital-calendar-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.hospital-calendar-header h2 { margin:0; font-size:13px; font-weight:600; text-transform:capitalize; }
+.hospital-calendar-header button { display:grid; place-items:center; width:34px; height:36px; background:none; color:var(--hospital-text); border-radius:5px; }
+.hospital-calendar-header button:first-child svg { transform:rotate(180deg); }
+.hospital-calendar-hint { min-height:32px; margin:8px 0; color:var(--hospital-muted); font-size:12px; line-height:1.4; }
+.hospital-calendar-grid > [role="row"] { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
+.hospital-calendar-grid [role="columnheader"] { padding:6px 0; text-align:center; color:var(--hospital-muted); font-size:12px; }
+.hospital-calendar-day { min-width:0; min-height:36px; padding:0; border-radius:4px; color:var(--hospital-text); background:none; font-size:12px; font-variant-numeric:tabular-nums; }
+.hospital-calendar-day.other-month { color:var(--hospital-muted); }
+.hospital-calendar-day:hover { background:var(--hospital-hover); }
+.hospital-calendar-day.in-range { color:var(--hospital-text); background:var(--hospital-accent-bg); border-radius:0; }
+.hospital-calendar-day[aria-selected="true"] { color:var(--hospital-on-primary); background:var(--hospital-primary); }
+.hospital-calendar-day[aria-current="date"] { text-decoration:underline; text-underline-offset:4px; }
+.hospital-calendar-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; border-top:1px solid var(--hospital-border); padding-top:7px; }
+.hospital-calendar-footer button { min-height:38px; padding:8px; color:var(--hospital-accent); background:none; border-radius:5px; font-size:12px; }
+.hospital-workspace ::selection { color:var(--hospital-text); background:var(--hospital-accent-bg); }
+@media (min-width:1700px) { .hospital-filterbar { grid-template-columns:minmax(300px,1.7fr) minmax(160px,1fr) minmax(160px,1fr) minmax(180px,1fr) auto; } .hospital-quick-filters { grid-column:auto; } }
+@media (max-width:1250px) { .hospital-filterbar { grid-template-columns:minmax(260px,1.3fr) minmax(150px,1fr); } .hospital-topbar { flex-wrap:wrap; } .hospital-heading-actions { margin-left:auto; } .hospital-quick-filters { grid-column:1/-1; } }
+@media (max-width:1200px) { .hospital-workspace .shell { grid-template-columns:76px minmax(0,1fr); } .hospital-workspace .content:has(> .hospital-kanban) { padding:22px 20px 16px; gap:16px; } .hospital-workspace .sidebar { padding:22px 9px; } .hospital-workspace .sidebar .brand-lockup span,.hospital-workspace .nav .label,.hospital-workspace .nav-section,.hospital-workspace .user-box>div { display:none; } .hospital-workspace .nav button { justify-content:center; } .hospital-topbar .page-title { font-size:25px; } }
+@media (max-width:899px) { .hospital-workspace .content > .hospital-kanban { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:280px; width:100%; overflow-x:auto; } .hospital-workspace .hospital-kanban .hospital-column-collapsed { width:44px; } .hospital-workspace .hospital-kanban:has(.hospital-column-collapsed) { grid-auto-columns:auto; } .hospital-workspace .hospital-kanban .hospital-column:not(.hospital-column-collapsed) { width:280px; } }
+@media (max-width:540px) { .hospital-workspace .shell { display:block; } .hospital-workspace .content:has(> .hospital-kanban) { padding:20px 16px 12px; gap:16px; } .hospital-workspace .sidebar.mobile-navigation-open { width:min(280px,calc(100vw - 32px)); padding:24px 16px; border:1px solid var(--hospital-control-border); border-radius:10px; background:var(--hospital-sidebar); } .hospital-workspace .sidebar.mobile-navigation-open .label,.hospital-workspace .sidebar.mobile-navigation-open .nav-section,.hospital-workspace .sidebar.mobile-navigation-open .user-box>div,.hospital-workspace .sidebar.mobile-navigation-open .brand-lockup span { display:block; } .hospital-workspace .sidebar.mobile-navigation-open .nav button { justify-content:flex-start; } .hospital-topbar { display:flex; flex-wrap:wrap; gap:14px; } .hospital-topbar .page-heading { flex:1; } .hospital-topbar .page-title { font-size:25px; } .hospital-topbar .page-heading p { font-size:12px; } .hospital-heading-actions { width:100%; margin:0; } .hospital-add-demand { flex:1; } .hospital-manage-status { width:44px; padding:10px; } .hospital-manage-status span { display:none; } .hospital-filterbar { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .hospital-search,.hospital-period { grid-column:1/-1; } .hospital-quick-filters { justify-content:flex-start; gap:6px; } .hospital-quick-filter { flex:1 1 auto; min-height:38px; padding:8px; } .hospital-period-popover { left:0; right:auto; width:min(312px,calc(100vw - 32px)); } .hospital-filterbar input.search { font-size:12px; } }
+@media (prefers-reduced-motion:no-preference) { .hospital-card-open,.hospital-column-rail,.hospital-quick-filter { transition:background-color 120ms ease-out,border-color 120ms ease-out; } }
+
+/* A folha antiga possui seletores contextuais de alta especificidade no tema claro. */
+.hospital-workspace.light-theme .content > .hospital-kanban .hospital-card { border-color:var(--hospital-card-border); background:var(--hospital-card); box-shadow:none; }
+.hospital-workspace.light-theme .content > .hospital-kanban .hospital-card:hover { border-color:var(--hospital-focus); background:var(--hospital-card); box-shadow:none; }
+.hospital-workspace.light-theme .content > .hospital-kanban .hospital-column { border-color:var(--hospital-border); background:var(--hospital-column); }
+.hospital-workspace.light-theme .shell .sidebar .nav button.active { color:var(--hospital-accent); background:var(--hospital-accent-bg); box-shadow:none; }
+.hospital-workspace.light-theme .shell .sidebar :is(.nav-section,.user-role) { color:var(--hospital-muted); font-size:12px; }
+.hospital-workspace .mobile-navigation-trigger { color:var(--hospital-text); border:1px solid var(--hospital-control-border); background:var(--hospital-card); }
+.hospital-workspace .mobile-navigation-trigger span { background:currentColor; }
+
+.hospital-workspace .hospital-period-popover { position:fixed; max-height:calc(100dvh - 24px); max-width:calc(100vw - 24px); overflow:auto; }
