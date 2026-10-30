@@ -128,6 +128,14 @@ function hospitalDemandBoard() {
 
 function hospitalRenderAndFocus(selector) {
   render({ preserveScroll: true });
+  const calendar = document.querySelector('#hospital-period-popover');
+  const trigger = document.querySelector('.hospital-period-trigger');
+  if (calendar && trigger) {
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = calendar.getBoundingClientRect();
+    calendar.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - bounds.width - 12))}px`;
+    calendar.style.top = `${Math.max(12, Math.min(anchor.bottom + 8, window.innerHeight - bounds.height - 12))}px`;
+  }
   const target = selector && document.querySelector(selector);
   if (target?.classList.contains('hospital-calendar-day')) {
     document.querySelectorAll('.hospital-calendar-day').forEach(day => { day.tabIndex = -1; });

@@ -200,3 +200,5 @@
 .hospital-workspace.light-theme .shell .sidebar :is(.nav-section,.user-role) { color:var(--hospital-muted); font-size:12px; }
 .hospital-workspace .mobile-navigation-trigger { color:var(--hospital-text); border:1px solid var(--hospital-control-border); background:var(--hospital-card); }
 .hospital-workspace .mobile-navigation-trigger span { background:currentColor; }
+
+.hospital-workspace .hospital-period-popover { position:fixed; max-height:calc(100dvh - 24px); max-width:calc(100vw - 24px); overflow:auto; }
