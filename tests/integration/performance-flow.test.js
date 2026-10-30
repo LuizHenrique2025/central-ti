@@ -55,6 +55,9 @@ test('quadro paginado, painel e resumo de mensagens preservam dados e acesso por
     assert(board.pagination.filters.assignees.includes('Técnico antigo'));
     assert(!JSON.stringify(board).includes(attachment.data));
     assert(!board.records.some(record => 'descricao' in record || 'interacoes' in record));
+    assert.equal((await get('/api/resources/demandas?view=board&priority=Alta')).records.length, 0);
+    assert.equal((await get('/api/resources/demandas?view=board&priority=' + encodeURIComponent('Média'))).pagination.totals['Concluída'], 60);
+    assert.equal((await fetch(baseUrl + '/api/resources/demandas?view=board&priority=invalid', { headers: { authorization: `Bearer ${adminToken}` } })).status, 422);
     const more = await get('/api/resources/demandas?view=board&type=externa&completedLimit=75');
     assert.equal(more.records.length, 62);
     const old = await get('/api/resources/demandas?view=board&type=externa&query=PERF-000');

@@ -28,6 +28,7 @@ function demandBoardPage(records, user, options = {}) {
   };
   const query = normalize(options.query);
   const matches = scope.filter(record => {
+    if (options.priority && normalize(record.prioridade) !== normalize(options.priority)) return false;
     if (query && !['ticket', 'titulo', 'solicitante', 'categoria', 'assunto', 'tecnicoResponsavel', 'empresa'].some(key => normalize(record[key]).includes(query))) return false;
     const assignee = String(record.tecnicoResponsavel || '').trim();
     if (options.assignee === '__mine__' && normalize(assignee) !== normalize(user.nome)) return false;

@@ -358,7 +358,8 @@ test('catálogo de demandas cobre os motivos recorrentes revisados em produção
   assert.match(configSource, /Laboratório/);
   assert.match(configSource, /subjects: \['incluir exames'\]/);
   assert.match(appSource, /function canonicalDemandCategory\(category\)/);
-  assert.match(appSource, /canonicalDemandCategory\(card\.categoria\)/);
+  const boardSource = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/features/hospital-board.js'), 'utf8');
+  assert.match(boardSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
 
 test('relatório de demandas inclui o modelo institucional de impressão', () => {

@@ -202,3 +202,6 @@
 .hospital-workspace .mobile-navigation-trigger span { background:currentColor; }
 
 .hospital-workspace .hospital-period-popover { position:fixed; max-height:calc(100dvh - 24px); max-width:calc(100vw - 24px); overflow:auto; }
+.hospital-workspace.dark { color-scheme:dark; }
+.hospital-workspace.light-theme { color-scheme:light; }
+@media (max-width:540px), (max-height:740px) { .hospital-workspace .content:has(> .hospital-kanban) { overflow-y:auto; } }

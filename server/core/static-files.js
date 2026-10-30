@@ -10,7 +10,9 @@ const PUBLIC_FILES = new Set([
   '/assets/js/core/bootstrap.js',
   '/assets/css/styles.css',
   '/assets/css/hospital-board.css',
-  '/assets/js/features/hospital-board.js'
+  '/assets/js/features/hospital-board.js',
+  '/assets/js/features/internal-board.js',
+  '/assets/css/internal-board.css'
 ]);
 
 function createStaticFileHandler(publicDirectory) {

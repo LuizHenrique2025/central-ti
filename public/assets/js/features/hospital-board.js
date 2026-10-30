@@ -111,8 +111,9 @@ function hospitalPeriodFilter() {
   return `<div class="hospital-period"><span class="hospital-filter-label" id="hospital-period-label">Data de abertura</span><button type="button" class="hospital-period-trigger" data-action="hospital-toggle-period" aria-labelledby="hospital-period-label hospital-period-value" aria-expanded="${Boolean(state.hospitalPeriodOpen)}" ${state.hospitalPeriodOpen ? 'aria-controls="hospital-period-popover"' : ''} aria-haspopup="dialog">${hospitalIcon('calendar')}<span id="hospital-period-value">${esc(label)}</span>${hospitalIcon('chevron')}</button>${hospitalCalendar()}</div>`;
 }
 
-function hospitalDemandBoard() {
-  const records = state.records.filter(record => record.tipo === 'externa');
+function hospitalDemandBoard(type = 'externa') {
+  if (type === 'interna') return internalDemandBoard();
+  const records = state.records.filter(record => (record.tipo || 'interna') === type);
   const baseCards = records.filter(matchesDemandFilters);
   const cards = baseCards.filter(card => hospitalSlaMatches(card, state.hospitalSlaFilter));
   const expanded = state.hospitalExpandedColumns || [];
@@ -122,7 +123,7 @@ function hospitalDemandBoard() {
     const collapsed = total === 0 && normalizeDemandText(status) !== 'aberta' && !expanded.includes(status);
     return { status, cards: statusCards, total, collapsed };
   });
-  const controls = `${canUpdate('demandas') ? `<button type="button" class="hospital-manage-status" data-action="status-manager" aria-label="Gerenciar status">${hospitalIcon('settings')}<span>Gerenciar status</span></button>` : ''}${canCreate('demandas') ? `<button type="button" class="hospital-add-demand" data-action="open-demand" data-demand-type="externa">${hospitalIcon('plus')}<span>Abrir chamado</span></button>` : ''}`;
+  const controls = `${canUpdate('demandas') ? `<button type="button" class="hospital-manage-status" data-action="status-manager" aria-label="Gerenciar status">${hospitalIcon('settings')}<span>Gerenciar status</span></button>` : ''}${canCreate('demandas') ? `<button type="button" class="hospital-add-demand" data-action="open-demand" data-demand-type="${type}">${hospitalIcon('plus')}<span>Abrir chamado</span></button>` : ''}`;
   return `<div class="topbar hospital-topbar"><div class="page-heading"><h1 class="page-title">Demandas Hospital</h1><p>Atendimento e solicitações dos setores</p></div><button class="mobile-navigation-trigger" type="button" data-action="open-mobile-navigation" aria-label="Abrir menu" aria-controls="primary-navigation" aria-expanded="${mobileNavigationOpen}"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button><div class="hospital-heading-actions">${controls}<span class="hospital-theme-slot"></span></div></div><div class="hospital-filterbar"><label class="hospital-search"><span class="hospital-filter-label">Buscar demandas</span><span>${hospitalIcon('search')}<input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Buscar ticket, demanda ou solicitante"/></span></label><label class="hospital-filter-field"><span class="hospital-filter-label">Solicitante</span>${demandRequesterFilter(records)}</label><label class="hospital-filter-field"><span class="hospital-filter-label">Responsável</span>${demandAssigneeFilter(records)}</label>${hospitalPeriodFilter()}${hospitalQuickFilters(baseCards)}</div><div class="kanban hospital-kanban" role="region" aria-label="Quadro de demandas hospitalares" style="--hospital-columns:${columns.map(column => column.collapsed ? '44px' : 'minmax(0,1fr)').join(' ')}">${columns.map(({ status, cards: statusCards, total, collapsed }) => `<section class="kanban-column hospital-column${collapsed ? ' hospital-column-collapsed' : ''}" data-drop-status="${esc(status)}" aria-label="Coluna ${esc(canonicalDemandStatus(status))}, ${total} demandas">${collapsed ? `<button type="button" class="hospital-column-rail" data-action="hospital-expand-column" data-status="${esc(status)}" aria-expanded="false" aria-label="Expandir coluna ${esc(canonicalDemandStatus(status))}"><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${total}</b><span>${esc(canonicalDemandStatus(status))}</span>${hospitalIcon('chevron')}</button>` : `<header class="hospital-column-heading"><span class="kanban-dot ${demandStatusTone(status)}"></span><h2>${esc(canonicalDemandStatus(status))}</h2><small>${total}</small>${total === 0 && normalizeDemandText(status) !== 'aberta' ? `<button type="button" class="hospital-collapse-column" data-action="hospital-collapse-column" data-status="${esc(status)}" aria-expanded="true" aria-label="Recolher coluna ${esc(canonicalDemandStatus(status))}">${hospitalIcon('chevron')}</button>` : ''}</header><div class="kanban-cards hospital-column-cards">${visibleDemandCards(statusCards).map(hospitalCard).join('') || `<div class="hospital-column-empty">${state.query || state.hospitalSlaFilter || state.demandCreatedStart || state.demandRequester || state.demandAssignee ? 'Nenhuma demanda com estes filtros.' : 'Nenhuma demanda neste status.'}</div>`}${hospitalMoreButton(statusCards)}</div>`}</section>`).join('')}</div>`;
 }
 
@@ -171,6 +172,9 @@ document.addEventListener('scroll', event => {
 
 function hospitalHandleAction(control) {
   const action = control.dataset.action;
+  if (action === 'hospital-internal-clear') { state.query = ''; state.internalPriority = ''; state.hospitalSlaFilter = ''; return clearDemandFilters(); }
+  if (action === 'hospital-internal-priority') { state.internalPriority = state.internalPriority === control.dataset.priority ? '' : control.dataset.priority; return reloadDemandBoard(); }
+  if (action === 'hospital-internal-view') { state.internalBoardView = control.dataset.view; return hospitalRenderAndFocus(`[data-action="hospital-internal-view"][data-view="${control.dataset.view}"]`); }
   if (action === 'hospital-move-status') { if (canUpdate('demandas')) moveDemand(control.dataset.demandId, control.dataset.status); return; }
   if (action === 'hospital-sla-filter') { state.hospitalSlaFilter = state.hospitalSlaFilter === control.dataset.filter ? '' : control.dataset.filter; hospitalRenderAndFocus(`[data-action="hospital-sla-filter"][data-filter="${control.dataset.filter}"]`); return; }
   if (action === 'hospital-expand-column' || action === 'hospital-collapse-column') {
@@ -219,6 +223,7 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (event.key === '/' && state.page === 'demandas-internas' && !state.modal && !event.target.closest('input,textarea,select,[contenteditable=true]')) { event.preventDefault(); document.querySelector('.hospital-search input')?.focus(); return; }
   const menu = event.target.closest('.hospital-card-menu');
   if (event.key === 'Escape' && menu?.open) { event.preventDefault(); menu.open = false; menu.querySelector('summary').focus(); return; }
   if (!state.hospitalPeriodOpen) return;
