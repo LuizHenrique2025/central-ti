@@ -98,7 +98,7 @@ function applyColorTheme() {
     control.querySelector('input').onchange = toggleColorTheme;
     document.body.append(control);
   }
-  const target = document.querySelector('.hospital-theme-slot') || document.querySelector('.central-theme-slot') || document.body;
+  const target = document.querySelector('.hospital-theme-slot') || document.querySelector('.central-theme-slot') || document.querySelector('.auth-theme-slot') || document.body;
   if (control.parentElement !== target) target.append(control);
   const light = colorTheme === 'light';
   if (target !== document.body) {

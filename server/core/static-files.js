@@ -10,6 +10,8 @@ const PUBLIC_FILES = new Set([
   '/assets/js/core/bootstrap.js',
   '/assets/css/styles.css',
   '/assets/css/central-ui.css',
+  '/assets/css/login-view.css',
+  '/assets/js/features/login-view.js',
   '/assets/css/hospital-board.css',
   '/assets/js/features/hospital-board.js',
   '/assets/js/features/internal-board.js',
