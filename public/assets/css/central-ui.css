@@ -1,0 +1,164 @@
+/* Tokens compartilhados das telas autenticadas. */
+.central-workspace {
+  --hospital-page:#10151d;
+  --hospital-sidebar:#171e29;
+  --hospital-column:#171e29;
+  --hospital-card:#1c2532;
+  --hospital-border:#344155;
+  --hospital-card-border:#64748b;
+  --hospital-control-border:#64748b;
+  --hospital-text:#e6e9ee;
+  --hospital-muted:#9aa4b2;
+  --hospital-accent:#8aaaff;
+  --hospital-accent-bg:#1c2c4d;
+  --hospital-primary:#2447d6;
+  --hospital-on-primary:#fff;
+  --hospital-focus:#8aaaff;
+  --hospital-hover:#253040;
+  --hospital-avatar:#2b394d;
+  --hospital-priority-critical:#ff9ca6;
+  --hospital-priority-high:#f4c46a;
+  --hospital-priority-medium:#9db8ff;
+  --hospital-priority-low:#9cdebb;
+  --sla-danger-bg:#351d25;
+  --sla-danger-fg:#ffb1b9;
+  --sla-warning-bg:#352b18;
+  --sla-warning-fg:#f5d18a;
+  --sla-ok-bg:#153326;
+  --sla-ok-fg:#9cdebb;
+  --sla-neutral-bg:#242d38;
+  --sla-neutral-fg:#cbd5e1;
+  --ink:var(--hospital-text);
+  --muted:var(--hospital-muted);
+  --line:var(--hospital-border);
+  --blue:var(--hospital-accent);
+  background:var(--hospital-page);
+  color:var(--hospital-text);
+}
+.central-workspace.light-theme {
+  --hospital-page:#f6f7fc;
+  --hospital-sidebar:#fff;
+  --hospital-column:#fbfcfe;
+  --hospital-card:#fff;
+  --hospital-border:#dfe5ef;
+  --hospital-card-border:#8591a1;
+  --hospital-control-border:#778497;
+  --hospital-text:#111827;
+  --hospital-muted:#4b5563;
+  --hospital-accent:#2447d6;
+  --hospital-accent-bg:#e6ecff;
+  --hospital-focus:#2447d6;
+  --hospital-hover:#f1f4fa;
+  --hospital-avatar:#e6ecf6;
+  --hospital-priority-critical:#b42339;
+  --hospital-priority-high:#875b00;
+  --hospital-priority-medium:#2447d6;
+  --hospital-priority-low:#176b49;
+  --sla-danger-bg:#fff0f2;
+  --sla-danger-fg:#a1263b;
+  --sla-warning-bg:#fff5db;
+  --sla-warning-fg:#7c5200;
+  --sla-ok-bg:#e9f6ee;
+  --sla-ok-fg:#176343;
+  --sla-neutral-bg:#edf0f5;
+  --sla-neutral-fg:#425166;
+}
+/* Superfícies comuns: um único padrão para toda a área autenticada. */
+.central-workspace { --bg:var(--hospital-page); --navy:var(--hospital-text); --ui-soft:var(--hospital-column); --ui-success-bg:var(--sla-ok-bg); --ui-success-fg:var(--sla-ok-fg); --ui-warning-bg:var(--sla-warning-bg); --ui-warning-fg:var(--sla-warning-fg); --ui-danger-bg:var(--sla-danger-bg); --ui-danger-fg:var(--sla-danger-fg); --ui-overlay:rgb(0 0 0 / .55); font-size:13px; color-scheme:dark; }
+.central-workspace.light-theme { color-scheme:light; }
+.central-workspace .shell { height:100dvh; min-height:0; grid-template-columns:240px minmax(0,1fr); gap:0; padding:0; background:var(--hospital-page); }
+.central-workspace .shell.sidebar-collapsed { grid-template-columns:76px minmax(0,1fr); }
+.central-workspace .shell .sidebar { border:0; border-right:1px solid var(--hospital-border); border-radius:0; padding:24px 14px; background:var(--hospital-sidebar); box-shadow:none; }
+.central-workspace .shell .sidebar :is(.brand-lockup,.user-name) { color:var(--hospital-text); }
+.central-workspace .shell .sidebar .brand-mark { color:var(--hospital-accent); background:var(--hospital-accent-bg); box-shadow:none; }
+.central-workspace .shell .sidebar .nav button { color:var(--hospital-muted); min-height:44px; border:1px solid transparent; border-radius:7px; background:none; box-shadow:none; }
+.central-workspace .shell .sidebar .nav button.active { color:var(--hospital-accent); background:var(--hospital-accent-bg); border-color:transparent; box-shadow:none; }
+.central-workspace .shell .sidebar .nav button:hover { background:var(--hospital-hover); color:var(--hospital-text); }
+.central-workspace .shell .sidebar .nav .nav-icon { color:inherit; background:none; box-shadow:none; border-radius:0; }
+.central-workspace .shell .sidebar :is(.nav-section,.user-role) { color:var(--hospital-muted); font-size:12px; }
+.central-workspace .shell .content { min-width:0; height:100dvh; padding:24px 28px; border:0; border-radius:0; color:var(--hospital-text); background:var(--hospital-page); box-shadow:none; }
+.central-workspace .shell .content:not(:has(> .hospital-kanban)):not(:has(> .reports-view)) { display:flex; flex-direction:column; gap:20px; overflow:auto; }
+.central-workspace .shell .content > :not(.hospital-kanban) { flex-shrink:0; }
+.central-workspace .shell .content .topbar { display:flex; align-items:center; gap:16px; margin:0; }
+.central-workspace .shell .content .page-heading { min-width:0; }
+.central-workspace .shell .content .page-title { margin:0; color:var(--hospital-text); font-family:inherit; font-size:26px; line-height:1.25; letter-spacing:-.025em; }
+.central-workspace .shell .content .eyebrow { margin-bottom:5px; color:var(--hospital-muted); font-size:12px; line-height:1.4; letter-spacing:.025em; }
+.central-theme-slot { display:flex; flex:0 0 auto; margin-left:auto; }
+.central-workspace .central-theme-slot .theme-toggle { position:relative; inset:auto; display:grid; place-items:center; width:44px; height:44px; margin:0; padding:0; border:1px solid var(--hospital-control-border); border-radius:7px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; }
+.central-theme-slot .theme-toggle .slider { display:none; }
+.central-theme-slot .theme-toggle input { position:absolute; opacity:0; inset:0; width:100%; height:100%; margin:0; cursor:pointer; }
+.central-theme-slot .hospital-theme-icon { display:block; pointer-events:none; }
+.central-theme-slot .hospital-theme-icon svg { width:18px; height:18px; }
+.central-theme-slot .theme-toggle:has(input:focus-visible) { outline:2px solid var(--hospital-focus); outline-offset:3px; }
+.central-workspace .shell .content :is(.panel,.metric,.users-command-bar,.users-filters,.mail-sidebar,.mail-list,.mail-reader) { min-width:0; border:1px solid var(--hospital-border); border-radius:12px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; }
+.central-workspace .shell .content :is(.section-toolbar,.resource-filterbar) { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:0; padding:14px; border:1px solid var(--hospital-border); border-radius:12px; background:var(--hospital-card); box-shadow:none; }
+.central-workspace .shell .content .section-toolbar .search { flex:1 1 260px; width:auto; min-width:0; }
+.central-workspace .shell .content .toolbar-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.central-workspace .shell .content :where(input:not([type=checkbox]):not([type=radio]),select,textarea), .central-workspace .modal-backdrop :where(input:not([type=checkbox]):not([type=radio]),select,textarea) { min-width:0; min-height:38px; padding:9px 11px; border:1px solid var(--hospital-control-border); border-radius:7px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; font-size:13px; }
+.central-workspace :where(input,textarea)::placeholder { color:var(--hospital-muted); opacity:1; }
+.central-workspace :where(button,input,select,textarea,summary,a):focus-visible { outline:2px solid var(--hospital-focus); outline-offset:3px; }
+.central-workspace :where(input[type=checkbox],input[type=radio],progress,meter) { accent-color:var(--hospital-accent); }
+.central-workspace .shell .content :is(button.secondary,button.icon-btn,.mail-filter), .central-workspace .modal-backdrop button.secondary { min-height:38px; padding:8px 12px; border:1px solid var(--hospital-control-border); border-radius:7px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; font-size:13px; }
+.central-workspace .shell .content button.add-record, .central-workspace .modal-backdrop button.add-record { min-height:38px; padding:8px 14px; border:1px solid var(--hospital-primary); border-radius:7px; color:var(--hospital-on-primary); background:var(--hospital-primary); box-shadow:none; font-size:13px; }
+.central-workspace .shell .content :is(.link-button,.danger-link) { font-size:12px; border-radius:5px; }
+.central-workspace .shell .content .link-button { color:var(--hospital-accent); }
+.central-workspace .shell .content .danger-link { color:var(--ui-danger-fg); }
+.central-workspace .shell .content :is(.panel-heading,.users-table-head) { padding:18px 20px; border-color:var(--hospital-border); background:none; }
+.central-workspace .shell .content :is(.panel-heading h2,.panel-heading h3,.users-table-head h2,.users-table-head h3) { margin:0; font-size:15px; font-family:inherit; color:var(--hospital-text); }
+.central-workspace .shell .content :is(.panel-subtitle,.demand-meta,.metric-name,.users-command-title small,.users-table-head span) { color:var(--hospital-muted); font-size:12px; line-height:1.5; }
+.central-workspace .shell .content .metric { padding:20px; background:var(--hospital-card); }
+.central-workspace .shell .content .metric-number { font-family:inherit; font-size:30px; color:var(--hospital-text); font-variant-numeric:tabular-nums; }
+.central-workspace .shell .content .metric-icon { display:grid; place-items:center; width:36px; height:36px; border-radius:9px; color:var(--hospital-accent); background:var(--hospital-accent-bg); box-shadow:none; }
+.central-workspace .metric-icon svg,.central-workspace .users-command-title svg { width:20px; height:20px; }
+.central-workspace .shell .content .table-panel { max-width:100%; overflow-x:auto; }
+.central-workspace .shell .content .data-table { min-width:600px; width:100%; color:var(--hospital-text); border-collapse:collapse; }
+.central-workspace .shell .content .data-table :is(th,td) { border-color:var(--hospital-border); color:var(--hospital-text); background:none; font-size:12px; padding:14px; overflow-wrap:anywhere; }
+.central-workspace .shell .content .data-table th { color:var(--hospital-muted); font-size:12px; font-weight:600; background:var(--ui-soft); }
+.central-workspace .shell .content .data-table small { color:var(--hospital-muted); }
+.central-workspace .shell .content .data-table tbody tr:hover { background:var(--hospital-hover); }
+.central-workspace .shell .content .tag { color:var(--hospital-muted); background:var(--ui-soft); border:0; font-size:12px; border-radius:5px; }
+.central-workspace .shell .content .tag.success { color:var(--ui-success-fg); background:var(--ui-success-bg); }
+.central-workspace .shell .content .tag.warning { color:var(--ui-warning-fg); background:var(--ui-warning-bg); }
+.central-workspace .shell .content .tag.danger { color:var(--ui-danger-fg); background:var(--ui-danger-bg); }
+.central-workspace .shell .content :is(.empty,.kanban-empty) { color:var(--hospital-muted); background:none; padding:28px 16px; font-size:13px; line-height:1.5; }
+.central-workspace .shell .content :is(.announcement,.demand,.mail-thread-item,.mail-message,.mail-reader-head) { color:var(--hospital-text); border-color:var(--hospital-border); background:none; box-shadow:none; }
+.central-workspace .shell .content :is(.announcement h4,.announcement p,.mail-thread-subject,.mail-reader-subject) { color:var(--hospital-text); }
+.central-workspace .shell .content :is(.announcement small,.mail-thread-preview,.mail-thread-meta,.mail-reader-meta) { color:var(--hospital-muted); }
+.central-workspace .shell .content :is(.users-command-title,.users-filters label) { color:var(--hospital-text); }
+.central-workspace .shell .content .users-command-title > span { display:grid; place-items:center; color:var(--hospital-accent); background:var(--hospital-accent-bg); border-radius:8px; }
+.central-workspace .modal-backdrop { background:var(--ui-overlay); }
+.central-workspace .modal-backdrop :is(.modal,.modal-header,.modal-footer), .central-workspace .system-confirmation-card { color:var(--hospital-text); background:var(--hospital-card); border-color:var(--hospital-border); box-shadow:none; }
+.central-workspace .modal-backdrop .modal { border:1px solid var(--hospital-border); border-radius:12px; }
+.central-workspace .modal-backdrop :is(label,legend,h2,h3,h4),.central-workspace .system-confirmation-card :is(h2,p) { color:var(--hospital-text); }
+.central-workspace .modal-backdrop :is(.modal-intro,.field small,.mail-note) { color:var(--hospital-muted); }
+.central-workspace .modal-backdrop :is(fieldset,.check-item,.permission-table td,.permission-table th) { border-color:var(--hospital-border); color:var(--hospital-text); background:none; }
+.central-workspace .modal-backdrop .link-button { color:var(--hospital-accent); }
+.central-workspace .mobile-navigation-trigger { color:var(--hospital-text); border:1px solid var(--hospital-control-border); background:var(--hospital-card); }
+.central-workspace .mobile-navigation-trigger span { background:currentColor; }
+@media (max-width:1200px) { .central-workspace .shell { grid-template-columns:76px minmax(0,1fr); } .central-workspace .shell .sidebar { padding:22px 9px; } .central-workspace .sidebar .brand-lockup span,.central-workspace .nav .label,.central-workspace .nav-section,.central-workspace .user-box>div { display:none; } .central-workspace .shell .sidebar .nav button { justify-content:center; } }
+@media (max-width:768px) { .central-workspace .shell .content { padding:20px 16px; } .central-workspace .shell .content .page-title { font-size:24px; } .central-workspace .shell .content .section-toolbar .search { flex-basis:100%; } .central-workspace .shell .content .toolbar-actions { width:100%; justify-content:flex-end; } }
+@media (max-width:540px) { .central-workspace .shell { display:block; } .central-workspace .shell .content .topbar { flex-wrap:wrap; gap:12px; } .central-workspace .shell .content .page-heading { flex:1; } .central-workspace .central-theme-slot { margin-left:0; } .central-workspace .sidebar.mobile-navigation-open { width:min(280px,calc(100vw - 32px)); padding:24px 16px; border:1px solid var(--hospital-control-border); border-radius:10px; background:var(--hospital-sidebar); } .central-workspace .sidebar.mobile-navigation-open .label,.central-workspace .sidebar.mobile-navigation-open .nav-section,.central-workspace .sidebar.mobile-navigation-open .user-box>div,.central-workspace .sidebar.mobile-navigation-open .brand-lockup span { display:block; } .central-workspace .shell .sidebar.mobile-navigation-open .nav button { justify-content:flex-start; } }
+@media print { .central-workspace .shell { display:block; height:auto; } .central-workspace .shell .sidebar,.central-theme-slot,.central-workspace .content > .topbar { display:none !important; } .central-workspace .shell .content { height:auto; overflow:visible; padding:0; } }
+/* Ajustes responsivos e superfícies especializadas reutilizam os mesmos tokens. */
+.central-workspace .theme-toggle { z-index:auto; }
+.central-workspace .shell .content .section-toolbar { flex-direction:row; }
+.central-workspace .shell .content .section-toolbar .search { height:38px; }
+.central-workspace .shell .content .section-toolbar > select { flex:1 1 145px; max-width:100%; }
+.central-workspace .shell .content .data-table th { white-space:nowrap; overflow-wrap:normal; }
+.central-workspace .shell .content :is(.metrics,.announcements) { margin:0; }
+.central-workspace .shell .content .webmail { height:auto; min-height:0; grid-auto-rows:min-content; align-content:start; align-items:start; gap:16px; margin:0; }
+.central-workspace .shell .content .mail-folders { min-width:0; padding:14px; border:1px solid var(--hospital-border); border-radius:12px; color:var(--hospital-text); background:var(--hospital-card); box-shadow:none; }
+.central-workspace .shell .content .mail-list { min-height:420px; }
+.central-workspace .shell .content .compose-button { min-height:38px; border-radius:7px; color:var(--hospital-on-primary); background:var(--hospital-primary); border:1px solid var(--hospital-primary); box-shadow:none; font-size:13px; }
+.central-workspace .shell .content .mail-folders .folder { min-height:38px; padding:9px 10px; border-radius:7px; color:var(--hospital-muted); background:none; box-shadow:none; font-size:13px; }
+.central-workspace .shell .content .mail-folders .folder.active { color:var(--hospital-accent); background:var(--hospital-accent-bg); }
+.central-workspace .shell .content :is(.mail-list-title,.mail-list-tools,.mail-bulk-toolbar) { border-color:var(--hospital-border); color:var(--hospital-text); background:none; }
+.central-workspace .shell .content .mail-bulk-toolbar .icon-btn:not(:disabled) { color:var(--hospital-text); background:var(--hospital-card); border-color:var(--hospital-control-border); }
+.central-workspace .modal-backdrop .modal-header h2 { font-family:inherit; font-size:20px; }
+.central-workspace .modal-backdrop .field { font-size:13px; line-height:1.5; }
+.central-workspace .modal-backdrop .primary { min-height:38px; padding:8px 14px; border:1px solid var(--hospital-primary); border-radius:7px; color:var(--hospital-on-primary); background:var(--hospital-primary); box-shadow:none; font-size:13px; }
+.central-workspace .modal-backdrop .close { width:38px; height:38px; min-height:38px; padding:0; border:1px solid var(--hospital-control-border); border-radius:7px; color:var(--hospital-muted); background:var(--hospital-card); box-shadow:none; font-size:24px; }
+@media (max-width:768px) { .central-workspace .shell .content .section-toolbar .search { width:100%; flex:1 1 100%; } .central-workspace .shell .content .section-toolbar > select { width:100%; } .central-workspace .shell .content .toolbar-actions > button { max-width:100%; } .central-workspace .shell .content .webmail { grid-template-columns:minmax(0,1fr); } }
+body:not(.central-workspace) .theme-toggle .hospital-theme-icon { display:none; }
+
+.central-workspace .shell .content .hospital-filterbar input.search { padding-left:39px; }

@@ -9,6 +9,7 @@ const PUBLIC_FILES = new Set([
   '/assets/js/app.js',
   '/assets/js/core/bootstrap.js',
   '/assets/css/styles.css',
+  '/assets/css/central-ui.css',
   '/assets/css/hospital-board.css',
   '/assets/js/features/hospital-board.js',
   '/assets/js/features/internal-board.js',
