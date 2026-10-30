@@ -129,3 +129,5 @@ Antes de ativar `EMAIL_2FA_REQUIRED=true`, crie usuários com e-mails reais na t
 O quadro de Demandas Internas compartilha os componentes, temas, calendário e ações acessíveis do Hospital. Possui distribuição por etapa, alternância Quadro/Lista, atalho `/` para busca e filtros combináveis de SLA e prioridade. A lista conserva os mesmos registros paginados e o botão de carregar concluídas.
 
 A consulta `GET /api/resources/demandas?view=board` aceita também `priority=Crítica|Alta|Média|Baixa` (opcional, ampliação autorizada). O filtro é aplicado antes da paginação e mantém as permissões existentes. Valores inválidos retornam 422. Não há alteração de schema, dependências ou variáveis de ambiente.
+
+A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. As ações no rodapé reutilizam os controles de abertura e status existentes. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; o Hospital conserva seu card e suas colunas recolhíveis. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.

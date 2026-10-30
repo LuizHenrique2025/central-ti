@@ -12,6 +12,9 @@ function context(overrides = {}) {
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
   const result = vm.createContext({ state, completedVisible: 25, document: { addEventListener: () => {} }, Date, Intl, esc, mobileNavigationOpen: false, isCompletedDemand: card => isCompletedDemandStatus(card.status), formatSla: value => value, demandSlaTime: card => { const ms = new Date(card.prazoSla || '').getTime(); return Number.isNaN(ms) ? null : ms; }, canUpdate: () => true, canCreate: () => true, canonicalDemandCategory: value => value, canonicalDemandStatus: value => value, normalizeDemandText: value => String(value || '').toLowerCase(), demandStatusTone: () => 'tone-open', matchesDemandFilters: () => true, demandRequesterFilter: () => '<select></select>', demandAssigneeFilter: () => '<select></select>', visibleDemandCards: cards => cards, completedMoreButton: () => '', ...overrides });
   vm.runInContext(source, result);
+  const app = fs.readFileSync(path.join(__dirname, '../../public/assets/js/app.js'), 'utf8');
+  vm.runInContext(app.slice(app.indexOf('function demandCardControl('), app.indexOf('function demandEmptyState(')), result);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../public/assets/js/features/internal-board.js'), 'utf8'), result);
   return result;
 }
 
@@ -131,7 +134,7 @@ test('Internas reutiliza ações acessíveis e alterna para lista sem renomear s
   ui.state.records = [{ id: 'i1', tipo: 'interna', titulo: 'Atividade interna', status: 'Tdsa', prioridade: 'Alta' }, { id: 'h1', tipo: 'externa', titulo: 'Hospital', status: 'Aberta' }];
   let html = ui.hospitalDemandBoard('interna');
   assert.match(html, /Demandas Internas/);
-  assert.match(html, /internal-pipeline/);
+  assert.match(html, /internal-flow/);
   assert.match(html, /data-priority="Alta"/);
   assert.match(html, /Atividade interna/);
   assert(!html.includes('Abrir demanda: Hospital'));
@@ -154,4 +157,33 @@ test('ações que recarregam o próprio quadro interno preservam o período', as
   await ui.go('demandas-externas');
   assert.equal(state.demandCreatedStart, '');
   assert.equal(state.demandCreatedEnd, '');
+});
+
+
+test('cards internos preservam ações existentes e não inferem SLA cumprido', () => {
+  const ui = context();
+  const card = { id: 'i1', ticket: 'TI-0001', titulo: '<img src=x onerror=alert(1)>', status: 'Concluída', prioridade: 'Alta', solicitante: 'Pessoa', prazoSla: '2026-10-01' };
+  const html = ui.internalDemandCard(card);
+  assert.match(html, /internal-card priority-high/);
+  assert.match(html, /data-action="move-demand"/);
+  assert.match(html, /Abrir demanda/);
+  assert.match(html, /Concluída/);
+  assert(!html.includes('cumprido'));
+  assert(!html.includes('<img'));
+  const readonly = context({ canUpdate: () => false });
+  const view = readonly.internalDemandCard(card);
+  assert(!view.includes('<select'));
+  assert(!view.includes('draggable='));
+  assert.match(view, /data-action="demand-details"/);
+});
+
+test('fluxo interno usa contagens do histórico e mantém todas as etapas visíveis', () => {
+  const ui = context();
+  ui.state.demandPagination = {totals: {'Aberta': 2, 'Concluída': 430}};
+  const columns = ui.internalBoardColumns([]);
+  const html = ui.internalFlow(columns);
+  assert.match(html, /432 demandas/);
+  assert.match(html, /flex-grow:430/);
+  assert.match(html, /Tdsa/);
+  assert(!ui.internalDemandBoard().includes('hospital-column-rail'));
 });
