@@ -143,3 +143,9 @@ A apresentação de Internas utiliza um painel único de filtros, prioridades e 
 As telas autenticadas utilizam `public/assets/css/central-ui.css` como fonte comum dos tokens claro/escuro, navegação, cabeçalhos, controles, painéis, tabelas e formulários. Os estilos específicos dos quadros e relatórios complementam essa base. O controle de tema fica no cabeçalho de todas as telas; login e troca obrigatória de senha ficam fora da classe de apresentação autenticada.
 
 O contêiner da aplicação é neutro, com um único landmark principal por tela. Nos formulários modais, o contêiner recebe a semântica de diálogo e o formulário mantém seu comportamento de envio. O escopo local desta padronização está registrado em `docs/issues/padronizacao-visual-central.md`, sem publicação externa por orientação do responsável. Não há novas dependências, contratos de API, alterações de schema ou variáveis de ambiente.
+
+### Tela de acesso — Novembro Azul
+
+A apresentação de login está em `public/assets/js/features/login-view.js` e `public/assets/css/login-view.css`, com layout responsivo, laço SVG e temas claro/escuro. Identificação, senha, primeiro acesso, código de verificação e troca obrigatória usam os mesmos handlers e validações existentes. O controle de tema fica no rodapé da tela de acesso. A ajuda continua orientando a procurar o administrador; não cria solicitação ou canal externo.
+
+A campanha Novembro Azul segue a referência solicitada e não possui agendamento automático. Os estilos ficam restritos à classe `auth-page`. Registro local do escopo: `docs/issues/nova-tela-login.md`. Nenhuma API, tabela, dependência ou variável de ambiente foi acrescentada.
