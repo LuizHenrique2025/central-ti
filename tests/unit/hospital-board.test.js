@@ -114,3 +114,31 @@ test('Ver mais usa os totais reais e desconta as concluídas já exibidas', () =
   assert.equal(ui.hospitalMoreButton(cards), '');
   assert.equal(ui.hospitalMoreButton([]), '');
 });
+
+
+test('prioridade filtra todo o histórico antes de paginar e preserva os totais', () => {
+  const user = { id: 'admin', perfil: 'admin' };
+  const records = Array.from({ length: 80 }, (_, index) => ({ id: String(index), tipo: 'interna', status: 'Concluída', prioridade: index < 40 ? 'Alta' : 'Baixa', createdBy: user.id, createdAt: new Date(2026, 0, index + 1).toISOString() }));
+  const page = demandBoardPage(records, user, { type: 'interna', priority: 'Alta' });
+  assert.equal(page.records.length, 25);
+  assert.equal(page.pagination.totals['Concluída'], 40);
+  assert(page.records.every(record => record.prioridade === 'Alta'));
+  assert.equal(demandBoardPage(records, user, { priority: 'Alta', completedLimit: 50 }).records.length, 40);
+});
+
+test('Internas reutiliza ações acessíveis e alterna para lista sem renomear status', () => {
+  const ui = context();
+  ui.state.records = [{ id: 'i1', tipo: 'interna', titulo: 'Atividade interna', status: 'Tdsa', prioridade: 'Alta' }, { id: 'h1', tipo: 'externa', titulo: 'Hospital', status: 'Aberta' }];
+  let html = ui.hospitalDemandBoard('interna');
+  assert.match(html, /Demandas Internas/);
+  assert.match(html, /internal-pipeline/);
+  assert.match(html, /data-priority="Alta"/);
+  assert.match(html, /Atividade interna/);
+  assert(!html.includes('Abrir demanda: Hospital'));
+  ui.state.internalBoardView = 'list';
+  html = ui.hospitalDemandBoard('interna');
+  assert.match(html, /internal-list-view/);
+  assert.match(html, /Coluna Tdsa, 1 demandas/);
+  ui.state.internalPriority = 'Baixa';
+  assert(!ui.hospitalDemandBoard('interna').includes('Atividade interna'));
+});

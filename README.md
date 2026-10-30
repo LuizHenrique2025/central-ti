@@ -123,3 +123,9 @@ No modo de arquivo local, a Central TI cria um backup diário em `backups/` e ma
 Há suporte para exigir um código de seis dígitos enviado ao e-mail do usuário após a senha correta. Copie `.env.example` para `.env`, preencha os dados de SMTP e inicie o sistema com essas variáveis de ambiente. Para Gmail, ative a verificação em duas etapas na Conta Google e gere uma **Senha de app**; não use sua senha normal do Google.
 
 Antes de ativar `EMAIL_2FA_REQUIRED=true`, crie usuários com e-mails reais na tela **Usuários**. As contas `@centralti.local` são somente demonstrativas e não recebem mensagens.
+
+### Demandas Internas
+
+O quadro de Demandas Internas compartilha os componentes, temas, calendário e ações acessíveis do Hospital. Possui distribuição por etapa, alternância Quadro/Lista, atalho `/` para busca e filtros combináveis de SLA e prioridade. A lista conserva os mesmos registros paginados e o botão de carregar concluídas.
+
+A consulta `GET /api/resources/demandas?view=board` aceita também `priority=Crítica|Alta|Média|Baixa` (opcional, ampliação autorizada). O filtro é aplicado antes da paginação e mantém as permissões existentes. Valores inválidos retornam 422. Não há alteração de schema, dependências ou variáveis de ambiente.

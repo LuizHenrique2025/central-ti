@@ -179,15 +179,7 @@ function visibleDemandCards(cards) {
 function completedMoreButton(cards) {
   return (state.demandPagination ? demandStatusTotal(cards) > cards.length : cards.length > completedVisible) && cards.every(isCompletedDemand) ? '<button class="secondary" data-action="more-completed">Carregar mais concluídas</button>' : '';
 }
-function filteredDemandBoard(type) {
-  if (type === 'externa') return hospitalDemandBoard();
-  const external = type === 'externa';
-  const records = state.records.filter(record => (record.tipo || 'interna') === type);
-  const cards = records.filter(matchesDemandFilters);
-  const title = external ? 'Demandas Hospital' : 'Demandas Internas';
-  const subtitle = external ? 'Hospital · solicitações de setores externos' : 'T.I. · atividades internas da equipe';
-  return `${header(title, subtitle)}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(records)}<div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" data-action="open-demand" data-demand-type="${esc(type)}">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => card.status === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${demandStatusTotal(statusCards)}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(canonicalDemandCategory(card.categoria) || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(formatSla(card.prazoSla))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`;
-}
+function filteredDemandBoard(type) { return hospitalDemandBoard(type); }
 function ramalFilterCategory(value) {
   const sector = String(value || '').trim();
   const normalized = normalizeDemandText(sector);
@@ -511,7 +503,7 @@ document.addEventListener('keydown', event => {
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
-function render({ preserveScroll = false } = {}) { if (closingModal) return; document.body.classList.toggle('hospital-workspace', Boolean(state.user && state.page === 'demandas-externas')); const previousContent = preserveScroll ? document.querySelector('#app .content') : null; const scrollTop = previousContent?.scrollTop || 0; const hadModal = Boolean(document.querySelector('.modal-backdrop')); if (state.modal && !hadModal) modalOpener = document.activeElement; if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); if (typeof applyColorTheme === 'function') applyColorTheme(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); if (typeof applyColorTheme === 'function') applyColorTheme(); return; } const page = state.loading ? `<div class="loading-skeleton">${loadingPage()}</div>` : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : !isModuleEnabled(state.page) ? moduleDisabledPage(state.page) : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; if (preserveScroll) document.querySelector('#app .content')?.scrollTo({ top: scrollTop }); enhanceCurrentSurface(); setupModalAccessibility(); if (typeof applyColorTheme === 'function') applyColorTheme(); }
+function render({ preserveScroll = false } = {}) { if (closingModal) return; document.body.classList.toggle('hospital-workspace', Boolean(state.user && ['demandas-externas', 'demandas-internas'].includes(state.page))); const previousContent = preserveScroll ? document.querySelector('#app .content') : null; const scrollTop = previousContent?.scrollTop || 0; const hadModal = Boolean(document.querySelector('.modal-backdrop')); if (state.modal && !hadModal) modalOpener = document.activeElement; if (!state.token || !state.user) { $('#app').innerHTML = loginPage(); if (typeof applyColorTheme === 'function') applyColorTheme(); return; } if (state.user.mustChangePassword) { $('#app').innerHTML = passwordPage(); if (typeof applyColorTheme === 'function') applyColorTheme(); return; } const page = state.loading ? `<div class="loading-skeleton">${loadingPage()}</div>` : state.page === 'dashboard' ? dashboard() : state.page === 'demandas' ? demandBoard() : state.page === 'demandas-internas' ? filteredDemandBoard('interna') : state.page === 'demandas-externas' ? filteredDemandBoard('externa') : state.page === 'relatorios' ? reportPage() : state.page === 'email' ? emailPage() : state.page === 'usuarios' ? usersPage() : state.page === 'localizacao' ? locationPage() : !isModuleEnabled(state.page) ? moduleDisabledPage(state.page) : recordsPage(state.page); $('#app').innerHTML = `<div class="shell">${sidebar()}<main class="content">${page}</main></div>${modal()}`; if (preserveScroll) document.querySelector('#app .content')?.scrollTo({ top: scrollTop }); enhanceCurrentSurface(); setupModalAccessibility(); if (typeof applyColorTheme === 'function') applyColorTheme(); }
 function loadingPage() {
   const pages = {
     dashboard: ['Visão geral', 'Carregando indicadores e comunicados'],
@@ -574,6 +566,7 @@ async function load(options = {}) {
       state.unreadMessages = dashboard.inbox || 0;
     } else if (requestedPage === 'demandas' || requestedPage.startsWith('demandas-')) {
       const params = new URLSearchParams({ view: 'board', completedLimit: String(completedVisible), query: state.query, assignee: state.demandAssignee, requester: state.demandRequester, createdDate: state.demandCreatedDate, createdStart: state.demandCreatedStart || '', createdEnd: state.demandCreatedEnd || '', timezoneOffset: String(new Date(state.demandCreatedDate || state.demandCreatedStart ? (state.demandCreatedDate || state.demandCreatedStart) + 'T12:00:00' : Date.now()).getTimezoneOffset()) });
+      if (requestedPage === 'demandas-internas' && state.internalPriority) params.set('priority', state.internalPriority);
       if (requestedPage !== 'demandas') params.set('type', requestedPage === 'demandas-internas' ? 'interna' : 'externa');
       const [records, statuses, users] = await Promise.all([api('/api/resources/demandas?' + params), api('/api/demand-statuses'), usersForPage()]);
       if (!isCurrentRequest()) return;
@@ -622,8 +615,8 @@ async function load(options = {}) {
 }
 async function go(page) {
   state.hospitalPeriodOpen = false;
-  if (page !== state.page) state.hospitalSlaFilter = '';
-  if (page !== 'demandas-externas') { state.demandCreatedStart = ''; state.demandCreatedEnd = ''; }
+  if (page !== state.page) { state.hospitalSlaFilter = ''; state.internalPriority = ''; }
+  if (page !== state.page || page !== 'demandas-externas') { state.demandCreatedStart = ''; state.demandCreatedEnd = ''; }
   state.demandPagination = null;
   clearTimeout(searchTimer);
   completedVisible = COMPLETED_PAGE_SIZE;
