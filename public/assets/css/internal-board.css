@@ -130,3 +130,5 @@
 .internal-workspace .internal-card-actions .demand-card-actions select { width:100%; max-width:100%; }
 .internal-workspace .internal-long-status .demand-card-actions { grid-template-columns:minmax(0,1fr); }
 .internal-workspace .internal-list-view .internal-card-actions .demand-card-actions { display:flex; }
+
+.internal-workspace .internal-card-actions .demand-card-actions select { padding-inline:3px; }
