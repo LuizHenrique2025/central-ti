@@ -205,8 +205,8 @@ async function refreshInBackground() {
     const knownDemandIds = demandPage ? new Set(state.records.map(record => record.id)) : null;
     if (state.page === 'localizacao') await refreshUnreadMessages(true);
     else {
-      await refreshUnreadMessages(false);
-      await load({ silent: true });
+      const unreadChanged = state.page !== 'email' ? await refreshUnreadMessages(false) : false;
+      await load({ silent: true, forceRender: unreadChanged });
     }
     if (knownDemandIds) {
       const incoming = state.records.filter(record => !knownDemandIds.has(record.id));

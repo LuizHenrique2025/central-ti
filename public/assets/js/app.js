@@ -76,7 +76,7 @@ document.addEventListener('click', event => {
   if (!control || control.disabled) return;
   switch (control.dataset.action) {
     case 'go': return go(control.dataset.page);
-    case 'more-completed': completedVisible += COMPLETED_PAGE_SIZE; return render({ preserveScroll: true });
+    case 'more-completed': completedVisible += COMPLETED_PAGE_SIZE; return reloadDemandBoard(false);
     case 'open-mobile-navigation': return openMobileNavigation(control);
     case 'close-mobile-navigation': return closeMobileNavigation();
     case 'logout': return logout();
@@ -162,21 +162,22 @@ function demandCreatedDate(record) { const date = new Date(record.createdAt); if
 function matchesDemandRequester(record) { return !state.demandRequester || String(record.solicitante || '').trim() === state.demandRequester; }
 function matchesDemandCreatedDate(record) { return !state.demandCreatedDate || demandCreatedDate(record) === state.demandCreatedDate; }
 function matchesDemandFilters(record) { return matchesDemandSearch(record) && matchesDemandAssignee(record) && matchesDemandRequester(record) && matchesDemandCreatedDate(record); }
-function demandAssigneeFilter(records) { const assignees = [...new Set(records.map(record => String(record.tecnicoResponsavel || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); const mineCount = records.filter(record => normalizeDemandText(record.tecnicoResponsavel) === normalizeDemandText(state.user?.nome)).length; const unassignedCount = records.filter(record => !String(record.tecnicoResponsavel || '').trim()).length; return `<select data-action="demand-assignee-filter" aria-label="Filtrar demandas por responsável"><option value="">Todos os responsáveis</option><option value="__mine__" ${state.demandAssignee === '__mine__' ? 'selected' : ''}>Minhas demandas (${mineCount})</option>${unassignedCount ? `<option value="__unassigned__" ${state.demandAssignee === '__unassigned__' ? 'selected' : ''}>Não assumidas (${unassignedCount})</option>` : ''}${assignees.map(name => `<option value="${esc(name)}" ${state.demandAssignee === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
-function demandRequesterFilter(records) { const requesters = [...new Set(records.map(record => String(record.solicitante || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); return `<select data-action="demand-requester-filter" aria-label="Filtrar demandas por solicitante"><option value="">Todos os solicitantes</option>${requesters.map(name => `<option value="${esc(name)}" ${state.demandRequester === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
+function demandAssigneeFilter(records) { const options = state.demandPagination?.filters; const assignees = options?.assignees || [...new Set(records.map(record => String(record.tecnicoResponsavel || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); const mineCount = options?.mineCount ?? records.filter(record => normalizeDemandText(record.tecnicoResponsavel) === normalizeDemandText(state.user?.nome)).length; const unassignedCount = options?.unassignedCount ?? records.filter(record => !String(record.tecnicoResponsavel || '').trim()).length; return `<select data-action="demand-assignee-filter" aria-label="Filtrar demandas por responsável"><option value="">Todos os responsáveis</option><option value="__mine__" ${state.demandAssignee === '__mine__' ? 'selected' : ''}>Minhas demandas (${mineCount})</option>${unassignedCount ? `<option value="__unassigned__" ${state.demandAssignee === '__unassigned__' ? 'selected' : ''}>Não assumidas (${unassignedCount})</option>` : ''}${assignees.map(name => `<option value="${esc(name)}" ${state.demandAssignee === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
+function demandRequesterFilter(records) { const requesters = state.demandPagination?.filters.requesters || [...new Set(records.map(record => String(record.solicitante || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); return `<select data-action="demand-requester-filter" aria-label="Filtrar demandas por solicitante"><option value="">Todos os solicitantes</option>${requesters.map(name => `<option value="${esc(name)}" ${state.demandRequester === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`; }
 function demandFilters(records) { const hasFilters = state.demandAssignee || state.demandRequester || state.demandCreatedDate; return `<span class="demand-filters"><label class="demand-filter-field"><span>Solicitante</span>${demandRequesterFilter(records)}</label><span class="demand-filter-field demand-date-filter"><span>Data de abertura</span><span class="demand-date-controls"><input type="date" value="${esc(state.demandDateDraft)}" data-action="demand-date-filter" aria-label="Filtrar demandas por data de abertura"/><button type="button" class="secondary" data-action="open-demand-calendar" aria-label="Abrir calendário de data de abertura" title="Abrir calendário">▦</button><button type="button" class="secondary" data-action="apply-demand-date">Aplicar data</button></span></span><label class="demand-filter-field"><span>Responsável</span>${demandAssigneeFilter(records)}</label>${hasFilters ? '<button class="secondary demand-filter-clear" data-action="clear-demand-filters">Limpar filtros</button>' : ''}</span>`; }
 function canonicalDemandStatus(status) { return String(status || '').trim() === 'Concluida' ? 'Concluída' : status; }
 function canonicalDemandCategory(category) { return String(category || '').trim() === 'Outro' ? 'Outros' : category; }
 function demandStatusTone(status) { const value = normalizeDemandText(status); if (value.includes('conclu')) return 'tone-completed'; if (value.includes('andamento')) return 'tone-progress'; if (value.includes('aberta')) return 'tone-open'; return 'tone-neutral'; }
-function isCompletedDemand(record) { return demandStatusTone(record.status) === 'tone-completed'; }
+function isCompletedDemand(record) { return /conclu|finaliz|resolvid|encerr/.test(normalizeDemandText(record.status)); }
 function demandSlaTime(record) { const value = new Date(record.prazoSla || '').getTime(); return Number.isFinite(value) ? value : null; }
 function demandPriorityRail(cards) { const now = Date.now(), nextDay = now + 24 * 60 * 60 * 1000; const active = cards.filter(card => !isCompletedDemand(card)); const groups = [['overdue', 'SLA vencido', active.filter(card => { const due = demandSlaTime(card); return due !== null && due < now; })], ['soon', 'SLA vence em até 24 h', active.filter(card => { const due = demandSlaTime(card); return due !== null && due >= now && due <= nextDay; })], ['unassigned', 'Aguardando responsável', active.filter(card => !String(card.tecnicoResponsavel || '').trim())]]; const visible = groups.filter(([, , records]) => records.length); if (!visible.length) return '<section class="demand-priority-rail demand-priority-clear" aria-label="Prioridades de demandas">Nenhuma demanda exige atenção imediata.</section>'; return `<section class="demand-priority-rail" aria-label="Prioridades de demandas">${visible.map(([kind, label, records]) => `<section class="demand-priority-group priority-${kind}"><header><span>${esc(label)}</span><b>${records.length}</b></header></section>`).join('')}</section>`; }
-function demandBoard() { const cards = state.records.filter(matchesDemandFilters); return `${header('Demandas', 'Quadro de trabalho')}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(state.records)}<div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button><button class="add-record" data-action="open-record" data-resource="demandas">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => canonicalDemandStatus(card.status) === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`; }
+function demandBoard() { const cards = state.records.filter(matchesDemandFilters); return `${header('Demandas', 'Quadro de trabalho')}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(state.records)}<div class="toolbar-actions">${canWrite('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button><button class="add-record" data-action="open-record" data-resource="demandas">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => canonicalDemandStatus(card.status) === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${demandStatusTotal(statusCards)}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(card.solicitante)}</div><div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`; }
+function demandStatusTotal(cards) { return state.demandPagination?.totals[cards[0]?.status] ?? cards.length; }
 function visibleDemandCards(cards) {
   return cards.length && cards.every(isCompletedDemand) ? cards.slice(0, completedVisible) : cards;
 }
 function completedMoreButton(cards) {
-  return cards.length > completedVisible && cards.every(isCompletedDemand) ? '<button class="secondary" data-action="more-completed">Carregar mais concluídas</button>' : '';
+  return (state.demandPagination ? demandStatusTotal(cards) > cards.length : cards.length > completedVisible) && cards.every(isCompletedDemand) ? '<button class="secondary" data-action="more-completed">Carregar mais concluídas</button>' : '';
 }
 function filteredDemandBoard(type) {
   const external = type === 'externa';
@@ -184,7 +185,7 @@ function filteredDemandBoard(type) {
   const cards = records.filter(matchesDemandFilters);
   const title = external ? 'Demandas Hospital' : 'Demandas Internas';
   const subtitle = external ? 'Hospital · solicitações de setores externos' : 'T.I. · atividades internas da equipe';
-  return `${header(title, subtitle)}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(records)}<div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" data-action="open-demand" data-demand-type="${esc(type)}">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => card.status === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${statusCards.length}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(canonicalDemandCategory(card.categoria) || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(formatSla(card.prazoSla))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`;
+  return `${header(title, subtitle)}${demandPriorityRail(cards)}<div class="section-toolbar"><input class="search" aria-label="Pesquisar demandas" value="${esc(state.query)}" data-action="search" placeholder="Pesquisar por ticket, demanda ou solicitante..."/>${demandFilters(records)}<div class="toolbar-actions">${canUpdate('demandas') ? `<button class="secondary" data-action="status-manager">Gerenciar status</button>` : ''}${canCreate('demandas') ? `<button class="add-record" data-action="open-demand" data-demand-type="${esc(type)}">+ Abrir chamado</button>` : ''}</div></div><div class="kanban">${state.statuses.map(status => { const statusCards = cards.filter(card => card.status === status); return `<section class="kanban-column" data-drop-status="${esc(status)}"><header><span class="kanban-dot ${demandStatusTone(status)}"></span><b>${esc(status)}</b><small>${demandStatusTotal(statusCards)}</small></header><div class="kanban-cards">${visibleDemandCards(statusCards).map(card => `<article class="demand-card" data-action="demand-details" data-demand-id="${esc(card.id)}" ${canUpdate('demandas') ? `draggable="true" data-drag-demand-id="${esc(card.id)}"` : ''}><div class="demand-card-code">${esc(card.ticket || 'TI')}</div><div class="demand-card-title">${esc(card.titulo)}</div><div class="demand-card-meta">${esc(canonicalDemandCategory(card.categoria) || 'Sem categoria')} · ${esc(card.tecnicoResponsavel || 'Sem técnico')}</div><div class="demand-card-meta">${esc(card.solicitante)}${external ? ` · ${esc(card.empresa || 'Hospital')}` : ''}</div>${card.prazoSla ? `<div class="demand-card-sla">SLA · ${esc(formatSla(card.prazoSla))}</div>` : ''}<div class="demand-card-bottom">${tag(card.prioridade)}${demandCardControl(card)}</div></article>`).join('') || `<div class="kanban-empty">${demandEmptyState(cards, statusCards)}</div>`}${completedMoreButton(statusCards)}</div></section>`; }).join('')}</div>`;
 }
 function ramalFilterCategory(value) {
   const sector = String(value || '').trim();
@@ -532,24 +533,25 @@ function loadingPage() {
 function unreadCount(messages) { return messages.filter(message => message.recipient?.id === state.user?.id && !message.readAt && !message.recipientDeletedAt).length; }
 async function refreshUnreadMessages(renderWhenChanged = false) {
   if (!state.token || !state.user) return false;
+  const token = state.token;
   try {
-    const mail = await api('/api/messages');
-    const unreadMessages = (mail.messages || []).filter(message => message.recipient?.id === state.user.id && !message.readAt && !message.recipientDeletedAt);
-    const unreadIds = new Set(unreadMessages.map(message => message.id));
+    const summary = await api('/api/messages/summary');
+    if (token !== state.token || !state.user) return false;
+    const unreadIds = new Set(summary.unreadIds);
     if (knownUnreadMessageIds) {
-      const newMessages = unreadMessages.filter(message => !knownUnreadMessageIds.has(message.id));
-      if (newMessages.length) {
-        const newest = newMessages.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-        toast(newMessages.length === 1 ? `Nova mensagem de ${newest.sender.nome}: ${canonicalMailSubject(newest.subject)}` : `Você recebeu ${newMessages.length} novas mensagens.`);
+      const newIds = summary.unreadIds.filter(id => !knownUnreadMessageIds.has(id));
+      if (newIds.length) {
+        const latest = summary.latest;
+        toast(newIds.length === 1 && latest && newIds.includes(latest.id) ? `Nova mensagem de ${latest.senderName}: ${canonicalMailSubject(latest.subject)}` : `Você recebeu ${newIds.length} novas mensagens.`);
       }
     }
     knownUnreadMessageIds = unreadIds;
-    const changed = state.unreadMessages !== unreadMessages.length;
-    if (changed) { state.unreadMessages = unreadMessages.length; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); }
+    const changed = state.unreadMessages !== summary.unreadCount;
+    if (changed) { state.unreadMessages = summary.unreadCount; if (renderWhenChanged && !state.modal && !state.formDirty && !state.loading) render(); }
     return changed;
   } catch (_) { return false; /* A atualização do aviso não deve interromper a tela atual. */ }
 }
-function dataSnapshot() { const dashboard = state.dashboard ? { ...state.dashboard } : null; if (dashboard) delete dashboard.generatedAt; return JSON.stringify({ dashboard, records: state.records, users: state.users, messages: state.messages, report: state.report, statuses: state.statuses, locations: state.locations, unreadMessages: state.unreadMessages }); }
+function dataSnapshot() { const dashboard = state.dashboard ? { ...state.dashboard } : null; if (dashboard) { delete dashboard.generatedAt; delete dashboard.syncedAt; } return JSON.stringify({ dashboard, records: state.records, users: state.users, messages: state.messages, report: state.report, statuses: state.statuses, locations: state.locations, demandPagination: state.demandPagination, unreadMessages: state.unreadMessages }); }
 async function load(options = {}) {
   const silent = Boolean(options.silent);
   const requestId = options.requestId ?? navigationRequest;
@@ -570,9 +572,12 @@ async function load(options = {}) {
       state.dashboard = dashboard;
       state.unreadMessages = dashboard.inbox || 0;
     } else if (requestedPage === 'demandas' || requestedPage.startsWith('demandas-')) {
-      const [records, statuses, users] = await Promise.all([api('/api/resources/demandas'), api('/api/demand-statuses'), usersForPage()]);
+      const params = new URLSearchParams({ view: 'board', completedLimit: String(completedVisible), query: state.query, assignee: state.demandAssignee, requester: state.demandRequester, createdDate: state.demandCreatedDate, timezoneOffset: String(new Date(state.demandCreatedDate ? state.demandCreatedDate + 'T12:00:00' : Date.now()).getTimezoneOffset()) });
+      if (requestedPage !== 'demandas') params.set('type', requestedPage === 'demandas-internas' ? 'interna' : 'externa');
+      const [records, statuses, users] = await Promise.all([api('/api/resources/demandas?' + params), api('/api/demand-statuses'), usersForPage()]);
       if (!isCurrentRequest()) return;
       state.records = records.records;
+      state.demandPagination = records.pagination;
       state.statuses = statuses.statuses;
       state.users = users.users;
     } else if (requestedPage === 'relatorios') {
@@ -611,10 +616,11 @@ async function load(options = {}) {
     if (!silent) {
       state.loading = false;
       render();
-    } else if (before !== dataSnapshot()) render({ preserveScroll: true });
+    } else if (options.forceRender || before !== dataSnapshot()) render({ preserveScroll: true });
   }
 }
 async function go(page) {
+  state.demandPagination = null;
   clearTimeout(searchTimer);
   completedVisible = COMPLETED_PAGE_SIZE;
   const requestId = ++navigationRequest;
@@ -624,13 +630,17 @@ async function go(page) {
   state.modal = null;
   await load({ requestId });
 }
-function setSearch(value) { state.query = value; completedVisible = COMPLETED_PAGE_SIZE; clearTimeout(searchTimer); const page = state.page; searchTimer = setTimeout(() => { if (state.page !== page || state.modal) return; render(); const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }, 200); }
-function setDemandAssignee(value) { state.demandAssignee = value; render(); }
-function setDemandRequester(value) { state.demandRequester = value; render(); }
-function setDemandCreatedDate(value) { state.demandCreatedDate = value; state.demandDateDraft = value; render(); }
+function reloadDemandBoard(resetLimit = true) {
+  if (resetLimit) completedVisible = COMPLETED_PAGE_SIZE;
+  return load({ silent: true, requestId: ++navigationRequest, forceRender: true });
+}
+function setSearch(value) { state.query = value; completedVisible = COMPLETED_PAGE_SIZE; clearTimeout(searchTimer); const page = state.page; searchTimer = setTimeout(async () => { if (state.page !== page || state.modal) return; if (state.demandPagination) await reloadDemandBoard(); else render(); if (state.page !== page || state.modal) return; const input = $('.search'); if (input) { input.focus(); input.setSelectionRange(value.length, value.length); } }, 200); }
+function setDemandAssignee(value) { state.demandAssignee = value; if (state.demandPagination) return reloadDemandBoard(); render(); }
+function setDemandRequester(value) { state.demandRequester = value; if (state.demandPagination) return reloadDemandBoard(); render(); }
+function setDemandCreatedDate(value) { state.demandCreatedDate = value; state.demandDateDraft = value; if (state.demandPagination) return reloadDemandBoard(); render(); }
 function openDemandCalendar(control) { const input = control.parentElement.querySelector('input'); input.focus(); try { input.showPicker?.(); } catch { /* O campo permanece disponível para digitação. */ } }
 function applyDemandDate(control) { const input = control.parentElement.querySelector('input'); if (!input.reportValidity()) return; setDemandCreatedDate(input.value); }
-function clearDemandFilters() { state.demandAssignee = ''; state.demandRequester = ''; state.demandCreatedDate = ''; state.demandDateDraft = ''; render(); }
+function clearDemandFilters() { state.demandAssignee = ''; state.demandRequester = ''; state.demandCreatedDate = ''; state.demandDateDraft = ''; if (state.demandPagination) return reloadDemandBoard(); render(); }
 function setProgramFilter(field, value) { state[field] = value; render(); }
 function setResourceFilter(resource, key, value) { state.resourceFilters[`${resource}-${key}`] = value; render(); }
 function setUserFilter(key, value) { state.resourceFilters[`usuarios-${key}`] = value; render(); const input = $('.users-search'); if (key === 'query' && input) { input.focus(); input.setSelectionRange(value.length, value.length); } }
@@ -645,10 +655,20 @@ function clearDemandReportFilters() { state.demandReportDraft = { assignee: [], 
 function setDemandReportColumn(column, visible) { state.demandReportColumns[column] = visible; render(); }
 function setDemandReportPage(page) { state.demandReportPage = Math.max(1, page); render(); }
 function setDemandReportSection(section) { state.demandReportSection = section; render({ preserveScroll: true }); }
-function openRecord(resource, id = '') {
+async function openRecord(resource, id = '') {
+  let fullRecord;
+  if (resource === 'demandas' && id) {
+    const page = state.page, currentModal = state.modal;
+    try {
+      const result = await api(`/api/resources/demandas/${id}`);
+      if (state.page !== page || state.modal !== currentModal || state.formDirty) return;
+      fullRecord = result.records?.[0];
+      if (!fullRecord) return toast('Chamado não encontrado.');
+    } catch (error) { return toast(error.message); }
+  }
   state.formDirty = false;
   state.newDemandType = null;
-  state.modal = { type: 'record', resource, record: id ? state.records.find(record => record.id === id) : null };
+  state.modal = { type: 'record', resource, record: fullRecord || (id ? state.records.find(record => record.id === id) : null) };
   render();
   addObservationField();
   if (resource === 'computadores') api('/api/computer-groups').then(result => { if (state.modal?.type === 'record' && state.modal.resource === 'computadores' && !state.formDirty) { state.computerGroups = result.groups; render(); addObservationField(); } }).catch(error => toast(error.message));

@@ -76,6 +76,25 @@ Os scripts em `scripts/` devem ser executados em PowerShell como administrador:
 
 Revise os parâmetros antes de executar. Esses scripts alteram serviços e tarefas do Windows e não são necessários para desenvolvimento local.
 
+## Atualização das telas e histórico de demandas
+
+O quadro consulta uma projeção leve das demandas, sem conversas ou anexos, e
+carrega inicialmente até 25 registros de cada status concluído. Todas as demandas
+ativas continuam visíveis. **Carregar mais concluídas** amplia o histórico; a
+pesquisa e os filtros consultam também as concluídas ainda não carregadas.
+Descrições, conversas e anexos são consultados ao abrir detalhes ou editar.
+
+A API de listagem anterior continua disponível. A interface usa
+`GET /api/resources/demandas?view=board`, com `completedLimit` e filtros de tipo,
+pesquisa, responsável, solicitante e data. A resposta inclui os totais por status
+e opções de filtros, sempre limitados ao escopo do usuário autenticado.
+
+Os avisos periódicos usam `GET /api/messages/summary`, que retorna quantidade e
+identificadores das mensagens não lidas e os dados do aviso mais recente, sem o
+conteúdo das conversas. A caixa de e-mail completa é consultada ao abrir essa tela.
+A atualização ocorre a cada 15 segundos nas telas visíveis; horários de
+sincronização, isoladamente, não provocam reconstrução da interface.
+
 ## Backup
 
 No modo de arquivo local, a Central TI cria um backup diário em `backups/` e mantém os 30 mais recentes. Um administrador também pode gerar um backup imediato na tela **Usuários**. Essa pasta é ignorada pelo Git e não é publicada no GitHub.
