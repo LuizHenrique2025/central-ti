@@ -137,3 +137,9 @@ A visão geral utiliza os indicadores e agrupamentos reais de `demandReport`, re
 Os filtros podem ser recolhidos. As abas de Demandas, Exclusões, Inventário e Auditoria e as ações reais de exportação CSV e impressão permanecem disponíveis. Não é exibido tempo médio de resolução ou comparação com período anterior sem dados confiáveis. A tela reutiliza os temas do quadro; não adiciona endpoints, dependências, schema ou variáveis de ambiente.
 
 A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. As ações no rodapé reutilizam os controles de abertura e status existentes. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; o Hospital conserva seu card e suas colunas recolhíveis. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.
+
+### Padrão visual compartilhado
+
+As telas autenticadas utilizam `public/assets/css/central-ui.css` como fonte comum dos tokens claro/escuro, navegação, cabeçalhos, controles, painéis, tabelas e formulários. Os estilos específicos dos quadros e relatórios complementam essa base. O controle de tema fica no cabeçalho de todas as telas; login e troca obrigatória de senha ficam fora da classe de apresentação autenticada.
+
+O contêiner da aplicação é neutro, com um único landmark principal por tela. Nos formulários modais, o contêiner recebe a semântica de diálogo e o formulário mantém seu comportamento de envio. O escopo local desta padronização está registrado em `docs/issues/padronizacao-visual-central.md`, sem publicação externa por orientação do responsável. Não há novas dependências, contratos de API, alterações de schema ou variáveis de ambiente.
