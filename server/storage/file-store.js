@@ -1,7 +1,21 @@
 const { attachmentBytes } = require('../domain/attachments');
+const { boardRecord } = require('../domain/demand-board');
+const { demandBelongsToUser } = require('../domain/demand-access');
+const { isCompletedDemandStatus } = require('../domain/exclusion-rules');
 
 function createFileStore({ readFileDb, writeFileDb, createFileBackup, now, passwordHash }) {
   return {
+    async demandBoardRecords(user) { return readFileDb().demandas.filter(record => demandBelongsToUser(record, user)).map(boardRecord); },
+    async demandOverview(user) {
+      const records = readFileDb().demandas.filter(record => demandBelongsToUser(record, user) && !isCompletedDemandStatus(record.status));
+      return { total: records.length, records: records.slice(0, 4).map(boardRecord) };
+    },
+    async unreadMessageSummary(userId) {
+      const db = readFileDb();
+      const unread = db.messages.filter(message => message.recipientId === userId && !message.readAt && !message.recipientDeletedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const latest = unread[0];
+      return { unreadCount: unread.length, unreadIds: unread.map(message => message.id), latest: latest ? { id: latest.id, subject: latest.subject, senderName: db.users.find(user => user.id === latest.senderId)?.nome || 'Usuário removido', createdAt: latest.createdAt } : null };
+    },
     async users() { return readFileDb().users; },
     async findUserByEmail(email) { return readFileDb().users.find(user => user.email === email); },
     async findUserByLogin(login) { const clean = String(login || '').trim().toLowerCase(); return readFileDb().users.find(user => user.email?.toLowerCase() === clean || user.login?.toLowerCase() === clean); },

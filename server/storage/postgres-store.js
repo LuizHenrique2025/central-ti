@@ -1,3 +1,9 @@
+const { demandBoardFields } = require('../domain/demand-board');
+const { canViewAllDemands } = require('../domain/demand-access');
+
+const completedStatusSql = "COALESCE(data->>'status','') ~* '(conclu|finaliz|resolvid|encerr)'";
+const demandScopeSql = '($1::boolean OR created_by=$2::uuid OR data->>\'solicitanteId\'=$2::text)';
+
 function pgDate(value) {
   return value instanceof Date ? value.toISOString() : value || null;
 }
@@ -17,6 +23,24 @@ function pgRecord(row) {
 
 function createPostgresStore({ pool, now, passwordHash }) {
   return {
+    async demandBoardRecords(user) {
+      const projection = demandBoardFields.map(key => `'${key}',data->'${key}'`).join(',');
+      const result = await pool.query(`SELECT id,jsonb_build_object(${projection}) AS data,created_at,updated_at,created_by,updated_by FROM records WHERE resource='demandas' AND ${demandScopeSql} ORDER BY updated_at DESC,id DESC`, [canViewAllDemands(user), user.id]);
+      return result.rows.map(pgRecord);
+    },
+    async demandOverview(user) {
+      const values = [canViewAllDemands(user), user.id];
+      const where = `resource='demandas' AND ${demandScopeSql} AND NOT (${completedStatusSql})`;
+      const count = await pool.query(`SELECT count(*)::int AS total FROM records WHERE ${where}`, values);
+      const result = await pool.query(`SELECT id,jsonb_build_object('ticket',data->'ticket','titulo',data->'titulo','status',data->'status','prioridade',data->'prioridade','solicitante',data->'solicitante') AS data,created_at,updated_at,created_by,updated_by FROM records WHERE ${where} ORDER BY updated_at DESC,id DESC LIMIT 4`, values);
+      return { total: count.rows[0].total, records: result.rows.map(pgRecord) };
+    },
+    async unreadMessageSummary(userId) {
+      const result = await pool.query(`WITH unread AS (SELECT id,subject,sender_id,created_at FROM messages WHERE recipient_id=$1 AND read_at IS NULL AND recipient_deleted_at IS NULL)
+        SELECT count(*)::int AS "unreadCount",COALESCE(array_agg(id ORDER BY created_at DESC,id DESC),ARRAY[]::uuid[]) AS "unreadIds",
+        (SELECT jsonb_build_object('id',m.id,'subject',m.subject,'senderName',u.nome,'createdAt',m.created_at) FROM unread m LEFT JOIN users u ON u.id=m.sender_id ORDER BY m.created_at DESC,m.id DESC LIMIT 1) AS latest FROM unread`, [userId]);
+      return result.rows[0];
+    },
     async users() { return (await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",to_char(data_nascimento, \'YYYY-MM-DD\') AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users ORDER BY nome')).rows.map(normalizePgDates); },
     async findUserByEmail(email) { return normalizePgDates((await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",to_char(data_nascimento, \'YYYY-MM-DD\') AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users WHERE lower(email) = lower($1)', [email])).rows[0]); },
     async findUserByLogin(login) { return normalizePgDates((await pool.query('SELECT id,nome,email,login,setor,cpf_hash AS "cpfHash",cpf_last4 AS "cpfLast4",to_char(data_nascimento, \'YYYY-MM-DD\') AS "dataNascimento",perfil,active,activation_status AS "activationStatus",permissions,salt,hash,must_change_password AS "mustChangePassword",created_at AS "createdAt",updated_at AS "updatedAt" FROM users WHERE lower(email) = lower($1) OR lower(login) = lower($1)', [login])).rows[0]); },
