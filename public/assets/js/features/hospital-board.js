@@ -163,11 +163,6 @@ function hospitalHandleAction(control) {
   if (action === 'hospital-internal-view') { state.internalBoardView = control.dataset.view; return hospitalRenderAndFocus(`[data-action="hospital-internal-view"][data-view="${control.dataset.view}"]`); }
   if (action === 'hospital-move-status') { if (canUpdate('demandas')) moveDemand(control.dataset.demandId, control.dataset.status); return; }
   if (action === 'hospital-sla-filter') { state.hospitalSlaFilter = state.hospitalSlaFilter === control.dataset.filter ? '' : control.dataset.filter; hospitalRenderAndFocus(`[data-action="hospital-sla-filter"][data-filter="${control.dataset.filter}"]`); return; }
-  if (action === 'hospital-expand-column' || action === 'hospital-collapse-column') {
-    state.hospitalExpandedColumns = (state.hospitalExpandedColumns || []).filter(value => value !== control.dataset.status);
-    if (action === 'hospital-expand-column') state.hospitalExpandedColumns.push(control.dataset.status);
-    hospitalRenderAndFocus(action === 'hospital-expand-column' ? '.hospital-collapse-column' : '.hospital-column-rail'); return;
-  }
   if (action === 'hospital-toggle-period') {
     if (state.hospitalPeriodOpen) return hospitalClosePeriod(true);
     state.hospitalPeriodOpen = true;

@@ -17,15 +17,15 @@
 }
 .internal-workspace.light-theme {
   --internal-page:#f6f7fc;
-  --internal-column:#fbfcfe;
+  --internal-column:#e9eef6;
   --internal-surface:#fff;
-  --internal-border:#dfe5ef;
-  --internal-soft:#eef2f8;
-  --internal-stage-open:#3974d7;
-  --internal-stage-progress:#a87412;
-  --internal-stage-other:#7d5ac8;
-  --internal-stage-completed:#178464;
-  --internal-stage-neutral:#64748b;
+  --internal-border:#c6d2e2;
+  --internal-soft:#e2eaf5;
+  --internal-stage-open:#2456ad;
+  --internal-stage-progress:#785100;
+  --internal-stage-other:#64439a;
+  --internal-stage-completed:#14654c;
+  --internal-stage-neutral:#445268;
   --internal-critical-bg:#fceef2;
   --internal-high-bg:#fff3e4;
   --internal-medium-bg:#fff8df;
@@ -79,7 +79,7 @@
 .internal-workspace .internal-stage-other { background:var(--internal-stage-other); }
 .internal-workspace .internal-stage-completed { background:var(--internal-stage-completed); }
 .internal-workspace .internal-stage-neutral { background:var(--internal-stage-neutral); }
-.internal-workspace .content > .hospital-kanban.internal-kanban { grid-template-columns:var(--demand-board-columns); grid-auto-flow:unset; grid-auto-columns:unset; gap:14px; overflow-x:auto; padding-bottom:6px; }
+.internal-workspace .content > .hospital-kanban.internal-kanban { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:var(--demand-column-width); gap:14px; overflow-x:auto; padding-bottom:6px; }
 .internal-workspace .internal-kanban .internal-column { width:auto; min-width:0; padding:0; border:1px solid var(--internal-border); border-radius:14px; background:var(--internal-column); }
 .internal-workspace .internal-kanban .hospital-column-heading { min-height:48px; padding:12px 14px; border-bottom:1px solid var(--internal-border); }
 .internal-workspace .internal-kanban .hospital-column-heading small { min-width:24px; padding:3px 6px; text-align:center; border-radius:999px; background:var(--internal-soft); color:var(--hospital-muted); }
@@ -150,3 +150,60 @@
 .internal-card.priority-high { --demand-card-priority:var(--hospital-priority-high); }
 .internal-card.priority-low { --demand-card-priority:var(--hospital-priority-low); }
 .internal-workspace.light-theme .content > .hospital-kanban .internal-card { border-left-color:var(--demand-card-priority); }
+
+/* Largura estável: filtros e atualizações não alteram a geometria do quadro. */
+.internal-workspace {
+  --demand-column-width:300px;
+  --board-header-open:#1d3150;
+  --board-header-progress:#3a2f17;
+  --board-header-other:#322741;
+  --board-header-completed:#173c2e;
+  --board-header-neutral:#273344;
+  --board-card-hover:#263c56;
+  --board-card-active:#304e6d;
+}
+.internal-workspace.light-theme {
+  --board-header-open:#e6efff;
+  --board-header-progress:#fff1d1;
+  --board-header-other:#efe7fb;
+  --board-header-completed:#e1f3e9;
+  --board-header-neutral:#e5ebf3;
+  --board-card-hover:#e6efff;
+  --board-card-active:#d6e6ff;
+  --sla-danger-bg:#ffe3e9;
+  --sla-danger-fg:#9b1730;
+  --sla-warning-bg:#ffefb8;
+  --sla-warning-fg:#714c00;
+  --sla-ok-bg:#d6f2e2;
+  --sla-ok-fg:#115b3d;
+  --sla-neutral-bg:#dfe8f5;
+  --sla-neutral-fg:#30465f;
+}
+.internal-workspace .content > .internal-kanban .internal-column { width:var(--demand-column-width); }
+.internal-workspace .content > .internal-kanban.internal-list-view .internal-column { width:100%; }
+.internal-column { --column-header:var(--board-header-neutral); --column-foreground:var(--internal-stage-neutral); }
+.internal-column[data-stage-tone=open] { --column-header:var(--board-header-open); --column-foreground:var(--internal-stage-open); }
+.internal-column[data-stage-tone=progress] { --column-header:var(--board-header-progress); --column-foreground:var(--internal-stage-progress); }
+.internal-column[data-stage-tone=other] { --column-header:var(--board-header-other); --column-foreground:var(--internal-stage-other); }
+.internal-column[data-stage-tone=completed] { --column-header:var(--board-header-completed); --column-foreground:var(--internal-stage-completed); }
+.internal-workspace .internal-kanban .hospital-column-heading { background:var(--column-header); border-radius:13px 13px 0 0; }
+.internal-workspace .internal-kanban .hospital-column-heading :is(h2,small) { color:var(--column-foreground); }
+.internal-workspace .internal-kanban .hospital-column-heading small { background:var(--internal-surface); }
+.internal-workspace .internal-kanban .hospital-priority { color:var(--demand-card-priority); }
+.internal-workspace .internal-kanban .hospital-priority i { background:currentColor; }
+.internal-workspace .content > .internal-kanban .internal-card:hover,
+.internal-workspace.light-theme .content > .internal-kanban .internal-card:hover { border-color:var(--hospital-focus); border-left-color:var(--demand-card-priority); background:var(--board-card-hover); }
+.internal-workspace .internal-kanban .hospital-card-open:hover { background:var(--board-card-hover); }
+.internal-workspace .internal-kanban .hospital-card-open:active { background:var(--board-card-active); }
+.internal-workspace .internal-priorities button:not([aria-pressed=true]):hover,
+.internal-workspace .internal-view-switch button:not([aria-pressed=true]):hover { color:var(--hospital-accent); border-color:var(--hospital-focus); background:var(--hospital-accent-bg); }
+.internal-workspace .internal-clear:hover { color:var(--hospital-accent); background:var(--hospital-accent-bg); }
+.internal-workspace,.internal-workspace.light-theme { --hospital-hover:var(--board-card-hover); }
+.internal-workspace .hospital-quick-filter.sla-danger[aria-pressed=true] { color:var(--sla-danger-bg); background:var(--sla-danger-fg); }
+.internal-workspace .hospital-quick-filter.sla-warning[aria-pressed=true] { color:var(--sla-warning-bg); background:var(--sla-warning-fg); }
+.internal-workspace .hospital-quick-filter.sla-neutral[aria-pressed=true] { color:var(--sla-neutral-bg); background:var(--sla-neutral-fg); }
+.internal-workspace .internal-priorities button[aria-pressed=true] i { background:currentColor; }
+.internal-workspace .hospital-theme-slot .theme-toggle:hover { border-color:var(--hospital-focus); background:var(--board-card-hover); }
+.internal-workspace .hospital-calendar-header button:hover,.internal-workspace .hospital-calendar-footer button:hover { background:var(--board-card-hover); }
+.internal-workspace .hospital-status-menu button:not(:disabled):active { background:var(--board-card-active); }
+.internal-workspace .hospital-status-menu button:disabled:hover { background:transparent; }
