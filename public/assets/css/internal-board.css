@@ -207,3 +207,5 @@
 .internal-workspace .hospital-calendar-header button:hover,.internal-workspace .hospital-calendar-footer button:hover { background:var(--board-card-hover); }
 .internal-workspace .hospital-status-menu button:not(:disabled):active { background:var(--board-card-active); }
 .internal-workspace .hospital-status-menu button:disabled:hover { background:transparent; }
+
+.internal-workspace.dark { --hospital-muted:#b8c7d9; }
