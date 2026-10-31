@@ -52,19 +52,24 @@ test('usuário sem permissão não recebe ações de status nem drag and drop', 
   assert.match(card, /data-action="demand-details"/);
 });
 
-test('colunas vazias recolhem, Aberta permanece e entrada de card expande automaticamente', () => {
+test('colunas permanecem abertas com zero ou um card nos dois tipos de demanda', () => {
   const ui = context();
-  let html = ui.hospitalDemandBoard();
-  assert.equal((html.match(/class="hospital-column-rail"/g) || []).length, 4);
-  assert(!html.includes('aria-label="Expandir coluna Aberta"'));
-  ui.state.hospitalExpandedColumns = ['Tdsa'];
-  html = ui.hospitalDemandBoard();
-  assert.equal((html.match(/class="hospital-column-rail"/g) || []).length, 3);
-  ui.state.hospitalExpandedColumns = [];
-  ui.state.records = [{ id: 'd1', tipo: 'externa', titulo: 'Teste', status: 'Tdsa' }];
-  html = ui.hospitalDemandBoard();
-  assert(!html.includes('aria-label="Expandir coluna Tdsa"'));
-  assert.match(html, /hospital-card-open/);
+  for (const tipo of ['interna', 'externa']) {
+    ui.state.records = [];
+    ui.state.hospitalExpandedColumns = [];
+    let html = ui.hospitalDemandBoard(tipo);
+    assert.equal((html.match(/data-drop-status=/g) || []).length, ui.state.statuses.length);
+    assert(!html.includes('hospital-column-rail'));
+    assert(!html.includes('hospital-collapse-column'));
+    assert(!html.includes('--demand-board-columns'));
+    ui.state.hospitalExpandedColumns = ['Tdsa'];
+    assert.equal(ui.hospitalDemandBoard(tipo), html);
+    ui.state.records = [{id:'d1',tipo,titulo:'Teste',status:'Tdsa'}];
+    html = ui.hospitalDemandBoard(tipo);
+    assert.equal((html.match(/data-drop-status=/g) || []).length, ui.state.statuses.length);
+    assert(!html.includes('hospital-column-rail'));
+    assert.match(html, /hospital-card-open/);
+  }
 });
 
 test('período inclusivo funciona com paginação, filtro de proprietário e data única legada', () => {
@@ -177,7 +182,7 @@ test('cards compartilhados preservam ações por menu e não inferem SLA cumprid
   assert.match(view, /data-action="demand-details"/);
 });
 
-test('fluxo usa contagens do histórico e mantém etapas vazias acessíveis pelos trilhos', () => {
+test('fluxo usa contagens do histórico e mantém etapas vazias abertas', () => {
   const ui = context();
   ui.state.demandPagination = {totals: {'Aberta': 2, 'Concluída': 430}};
   const columns = ui.internalBoardColumns([]);
@@ -185,7 +190,8 @@ test('fluxo usa contagens do histórico e mantém etapas vazias acessíveis pelo
   assert.match(html, /432 demandas/);
   assert.match(html, /flex-grow:430/);
   assert.match(html, /Tdsa/);
-  assert(ui.internalDemandBoard().includes('hospital-column-rail'));
+  assert(!ui.internalDemandBoard().includes('hospital-column-rail'));
+  assert.match(ui.internalDemandBoard(), /<h2>Tdsa<\/h2>/);
 });
 
 

@@ -99,7 +99,7 @@ sincronização, isoladamente, não provocam reconstrução da interface.
 
 O quadro Hospital usa cards inteiros como botões de detalhes. Quem pode alterar
 demandas também encontra um menu de status no card e pode arrastá-lo entre
-colunas. Colunas vazias ficam em trilhos expansíveis; **Aberta** permanece aberta.
+colunas. As colunas permanecem abertas com largura fixa de 300 px, mesmo vazias. Use a rolagem horizontal do quadro para acessar as demais etapas.
 Os filtros rápidos de SLA podem ser ativados e desativados sem novas consultas.
 
 O calendário de abertura seleciona início e fim e aplica o período após a segunda
@@ -136,7 +136,7 @@ A visão geral utiliza os indicadores e agrupamentos reais de `demandReport`, re
 
 Os filtros podem ser recolhidos. As abas de Demandas, Exclusões, Inventário e Auditoria e as ações reais de exportação CSV e impressão permanecem disponíveis. Não é exibido tempo médio de resolução ou comparação com período anterior sem dados confiáveis. A tela reutiliza os temas do quadro; não adiciona endpoints, dependências, schema ou variáveis de ambiente.
 
-A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. A abertura ocorre pelo card e as ações de status ficam no menu acessível compartilhado com o Hospital. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; os dois tipos reutilizam o mesmo card e as colunas recolhíveis. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.
+A apresentação de Internas utiliza um painel único de filtros, prioridades e fluxo segmentado, com cards compactos e borda por prioridade. A abertura ocorre pelo card e as ações de status ficam no menu acessível compartilhado com o Hospital. Todas as etapas permanecem visíveis, com rolagem horizontal quando necessário; os dois tipos reutilizam o mesmo card e colunas de largura fixa, sempre abertas. Os nomes dos status e o cálculo dos indicadores continuam vindo do sistema.
 
 ### Padrão visual compartilhado
 
@@ -152,6 +152,8 @@ A campanha Novembro Azul segue a referência solicitada e não possui agendament
 
 ### Quadros de demandas unificados
 
-Demandas Internas e Demandas Hospital usam a mesma montagem de filtros, prioridades, fluxo, cards, menus e visão de lista. A página determina o tipo consultado e a identificação do contexto. Os cards abrem por botão semântico; ações de status ficam no menu acessível e o arraste respeita as permissões existentes. Não há botão redundante nem select no card. Colunas vazias podem ser expandidas no Kanban, com Aberta sempre aberta; na Lista, as etapas permanecem expandidas.
+Demandas Internas e Demandas Hospital usam a mesma montagem de filtros, prioridades, fluxo, cards, menus e visão de lista. A página determina o tipo consultado e a identificação do contexto. Os cards abrem por botão semântico; ações de status ficam no menu acessível e o arraste respeita as permissões existentes. Não há botão redundante nem select no card. No Kanban, todas as colunas têm 300 px e permanecem abertas; na Lista, as etapas ocupam a largura disponível.
 
 Prioridade, período, responsável e solicitante reutilizam a consulta de quadro existente nos dois tipos, com paginação de concluídas e totais por consulta. Escopo local: `docs/issues/unifica-quadros-demandas.md`. Nenhum contrato de API, schema ou variável de ambiente foi alterado.
+
+Correção #180: filtros e atualização de dados não redimensionam nem recolhem colunas. Cabeçalhos por etapa, prioridade, SLA e estados de hover/foco/seleção possuem tokens específicos para claro/escuro. O tema claro diferencia as superfícies e mantém o contraste dos textos; os filtros rápidos selecionados invertem as cores semânticas para tornar o estado ativo perceptível. Nenhuma alteração de API, schema, dados ou configuração.
