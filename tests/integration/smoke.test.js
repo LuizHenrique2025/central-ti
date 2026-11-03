@@ -362,17 +362,11 @@ test('catálogo de demandas cobre os motivos recorrentes revisados em produção
   assert.match(boardSource, /canonicalDemandCategory\(card\.categoria\)/);
 });
 
-test('relatório de demandas inclui o modelo institucional de impressão', () => {
-  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/app.js'), 'utf8');
-  assert.match(source, /print-document-header/);
-  assert.match(source, /Relatório de Demandas/);
-  assert.match(source, /print-document-footer/);
-  assert.match(source, /function printDemandReport\(\)/);
-  assert.match(source, /window\.open\('', '_blank'\)/);
-  assert.match(source, /@page\{size:A4 landscape/);
-  assert.match(source, /Emitido por:/);
-  assert.match(source, /Categoria/);
-  assert.match(source, /thead\{display:table-header-group\}/);
+test('relatório de demandas exporta PDF pelo servidor sem abrir janela de impressão', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/features/reports-view.js'), 'utf8');
+  assert.match(source, /Exportar PDF/);
+  assert.match(source, /api\/reports\/pdf/);
+  assert.doesNotMatch(source, /window\.print|window\.open/);
 });
 
 test('tela de relatório de demandas possui consulta explícita, colunas e paginação', () => {
@@ -598,6 +592,19 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(analyticsData.demandReport.reasons[0].label, 'Teste de métrica');
   assert.equal(analyticsData.demandReport.mainReasons[0].percentOfRequester, 100);
   assert.equal(analyticsData.demandReport.professionals[0].professional, 'Não atribuída');
+  assert.equal((await fetch(`${baseUrl}/api/reports/pdf`)).status, 401);
+  for (const query of ['start=2026-02-30', 'start=2026-11-01&end=2026-10-01', 'end=invalido']) {
+    assert.equal((await request(`/api/reports/pdf?${query}`, adminToken)).status, 400);
+  }
+  const pdfResponse = await request('/api/reports/pdf?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
+  assert.equal(pdfResponse.status, 200);
+  assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf');
+  assert.match(pdfResponse.headers.get('content-disposition'), /^attachment; filename="relatorio-demandas-\d{4}-\d{2}-\d{2}\.pdf"$/);
+  assert.equal(pdfResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(Buffer.from(await pdfResponse.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+  const emptyPdf = await request('/api/reports/pdf?demandStatus=StatusInexistente', adminToken);
+  assert.equal(emptyPdf.status, 200);
+  assert.equal(Buffer.from(await emptyPdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
   const analyticsExport = await request('/api/reports/export?demandReason=Teste%20de%20m%C3%A9trica', adminToken);
   assert.equal(analyticsExport.status, 200);
   assert.match(await analyticsExport.text(), /Principal motivo por solicitante/);
@@ -704,6 +711,9 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
     assert.equal(changed.status, 200);
   }
 
+  const forbiddenPdf = await request('/api/reports/pdf', tokenB);
+  assert.equal(forbiddenPdf.status, 403);
+  assert.match((await forbiddenPdf.json()).error, /Apenas administradores/);
   const ownMaterial = await request('/api/resources/pedidos', tokenA, { method: 'POST', body: JSON.stringify({ item: 'Mouse', quantidade: '1', setor: 'Setor A', solicitante: 'Nome falso', status: 'Entregue' }) });
   assert.equal(ownMaterial.status, 201);
   const ownMaterialRecord = (await ownMaterial.json()).record;

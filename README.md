@@ -34,6 +34,14 @@ backups/              Cópias locais (não enviadas ao GitHub)
 
 Toda correção, melhoria ou nova funcionalidade é rastreada por Issue e entregue por Pull Request. Consulte [AGENTS.md](AGENTS.md) para o fluxo obrigatório: Issue antes da implementação, branch por Issue, testes, PR com `Closes #<número>` e deploy somente após aprovação.
 
+### Exportação de demandas em PDF
+
+Nas abas Visão Geral e Demandas dos relatórios, **Exportar PDF** baixa um documento A4 gerado no servidor com pdfmake e fonte Roboto embutida. A exportação usa o período e os filtros da última consulta exibida, incluindo filtros com múltiplos valores. Alterações ainda não aplicadas nos controles não entram no documento. Os indicadores reutilizam `report-service`; o gráfico mensal agrupa as mesmas contagens diárias, sem mudar o comportamento da tela ou do CSV. O anexo contém todas as demandas filtradas, independentemente da página da tabela em tela.
+
+`GET /api/reports/pdf` requer autenticação Bearer e perfil `admin`, como os relatórios atuais. Aceita `start`/`end` em `AAAA-MM-DD` e os parâmetros repetíveis `demandAssignee`, `demandRequester`, `demandSector`, `demandReason`, `demandCategory` e `demandStatus`. Retorna `application/pdf` como anexo `relatorio-demandas-AAAA-MM-DD.pdf`, sem cache. Datas inválidas ou intervalo invertido retornam 400; filtros aceitam até 100 valores por campo, com até 500 caracteres cada. Exportações concorrentes são limitadas a uma por usuário e duas no servidor (429 quando ocupado). A data/hora de geração e as datas do anexo usam `America/Sao_Paulo`; os critérios de período e de conclusão permanecem os do serviço existente.
+
+Não exige banco, migration ou variável de ambiente nova. Para implantar, instale as dependências do lockfile com `npm ci` e reinicie o serviço após o PR aprovado, pois há código de backend novo. O rollback deve restaurar a versão anterior de código e dependências. O projeto não possui scripts de lint, typecheck ou build; valide com `npm test`, `node --check` e `git diff --check`.
+
 ### Desenvolvimento na mesma rede
 
 Por padrão, o servidor aceita o acesso pela rede local, usando o endereço exibido no painel, por exemplo `http://192.168.x.x:3000`. O tráfego direto é HTTP; use-o apenas em uma rede interna confiável. Para produção ou acesso fora da rede local, publique a Central TI por um reverse proxy HTTPS e compartilhe apenas a URL HTTPS do proxy.

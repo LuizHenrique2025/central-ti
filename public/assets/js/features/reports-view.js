@@ -9,6 +9,56 @@ function reportDateSeries(rows) {
   return { mode, rows: [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([label, total]) => ({ label, total })) };
 }
 
+function reportPdfQuery(report) {
+  const query = new URLSearchParams();
+  for (const key of ['start', 'end']) if (report.period?.[key]) query.set(key, report.period[key]);
+  for (const [key, values] of Object.entries(report.demandReport.filters)) {
+    for (const value of values) query.append(`demand${key[0].toUpperCase()}${key.slice(1)}`, value);
+  }
+  return query;
+}
+
+function reportPdfButton() {
+  const disabled = state.loading || state.reportPdfLoading || !state.report?.demandReport;
+  return `<button type="button" class="add-record" data-action="export-report-pdf" aria-busy="${Boolean(state.reportPdfLoading)}" ${disabled ? 'disabled' : ''}>${state.reportPdfLoading ? 'Gerando PDF…' : 'Exportar PDF'}</button>`;
+}
+
+async function exportReportPdf() {
+  if (state.loading || state.reportPdfLoading || !state.report?.demandReport) return;
+  const query = reportPdfQuery(state.report);
+  state.reportPdfLoading = true;
+  const updateButtons = () => document.querySelectorAll('[data-action="export-report-pdf"]').forEach(button => {
+    button.disabled = Boolean(state.reportPdfLoading || state.loading);
+    button.setAttribute('aria-busy', String(state.reportPdfLoading));
+    button.textContent = state.reportPdfLoading ? 'Gerando PDF…' : 'Exportar PDF';
+  });
+  updateButtons();
+  let objectUrl;
+  let link;
+  try {
+    const response = await fetch(`/api/reports/pdf?${query}`, { headers: { authorization: `Bearer ${state.token}` } });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || 'Não foi possível exportar o PDF. Tente novamente.');
+    }
+    if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('O servidor não retornou um PDF válido.');
+    objectUrl = URL.createObjectURL(await response.blob());
+    link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = response.headers.get('content-disposition')?.match(/filename="([\w.-]+)"/)?.[1] || 'relatorio-demandas.pdf';
+    document.body.appendChild(link);
+    link.click();
+    toast('PDF gerado. Download iniciado.');
+  } catch (error) {
+    toast(error.message || 'Não foi possível exportar o PDF.');
+  } finally {
+    link?.remove();
+    if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    state.reportPdfLoading = false;
+    updateButtons();
+  }
+}
+
 function reportsOverview(report) {
   const demand = report.demandReport;
   if (!demand) return '<div class="empty">Não há dados de demandas para exibir.</div>';
@@ -46,6 +96,7 @@ function reportRecentPeriod(days, timestamp = new Date()) {
 }
 
 document.addEventListener('click', event => {
+  if (event.target.closest('[data-action="export-report-pdf"]')) { exportReportPdf(); return; }
   const control = event.target.closest('[data-action="report-recent-period"]');
   if (!control || state.page !== 'relatorios' || state.loading) return;
   const days = Number(control.dataset.days);
