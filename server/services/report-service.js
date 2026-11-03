@@ -103,7 +103,7 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
     return csvDocument(rows);
   }
 
-  return { report, exportCsv };
+  return { report, exportCsv, demandReport };
 }
 
 module.exports = { createReportService };

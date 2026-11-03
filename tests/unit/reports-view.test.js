@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.resolve(__dirname, '../../public/assets/js/features/reports-view.js'), 'utf8');
 function context() {
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-  const ui = vm.createContext({ document: { addEventListener: () => {} }, state: {}, Date, Intl, Set, Map, esc, isModuleEnabled: () => true, modules: {}, reportTable: () => '', demandReportFilters: () => '', formatDate: value => value });
+  const ui = vm.createContext({ document: { addEventListener: () => {} }, state: {}, URLSearchParams, Date, Intl, Set, Map, esc, isModuleEnabled: () => true, modules: {}, reportTable: () => '', demandReportFilters: () => '', formatDate: value => value });
   vm.runInContext(source, ui);
   return ui;
 }
@@ -15,6 +15,68 @@ test('períodos rápidos incluem o dia atual sem ultrapassar mês e ano', () => 
   const period = ui.reportRecentPeriod(7, new Date(2026, 0, 3, 12));
   assert.equal(period.start, '2025-12-28');
   assert.equal(period.end, '2026-01-03');
+});
+
+test('exportação usa filtros da consulta exibida, incluindo múltiplos valores, sem usar rascunho', () => {
+  const ui = context();
+  ui.state.demandReportDraft = { status: ['Aberta'] };
+  ui.state.start = '2000-01-01';
+  const report = { period: { start: '2026-10-01', end: '2026-10-31' }, demandReport: { filters: { status: ['Concluída', 'Tdsa'], requester: ['João & Filhos'] } } };
+  const query = ui.reportPdfQuery(report);
+  assert.equal(query.get('start'), '2026-10-01');
+  assert.deepEqual(query.getAll('demandStatus'), ['Concluída', 'Tdsa']);
+  assert.equal(query.get('demandRequester'), 'João & Filhos');
+  assert.match(ui.reportPdfButton(), /disabled/);
+});
+
+test('download impede repetição e restaura o botão quando o servidor recusa a exportação', async () => {
+  const ui = context();
+  const button = { setAttribute: () => {} };
+  ui.document.querySelectorAll = () => [button];
+  ui.state.report = { demandReport: { filters: {} } };
+  let calls = 0, complete;
+  ui.fetch = () => { calls++; return new Promise(resolve => { complete = resolve; }); };
+  const messages = [];
+  ui.toast = message => messages.push(message);
+  const first = ui.exportReportPdf();
+  assert.equal(button.disabled, true);
+  assert.equal(ui.state.reportPdfLoading, true);
+  await ui.exportReportPdf();
+  assert.equal(calls, 1);
+  complete({ ok: false, json: async () => ({ error: 'Sua sessão expirou. Entre novamente.' }) });
+  await first;
+  assert.equal(button.disabled, false);
+  assert.equal(ui.state.reportPdfLoading, false);
+  assert.deepEqual(messages, ['Sua sessão expirou. Entre novamente.']);
+});
+
+test('download autenticado salva o blob com nome do servidor e libera o recurso após iniciar', async () => {
+  const ui = context();
+  ui.state.token = 'sessao-de-teste';
+  ui.state.report = { period: { start: '2026-10-01' }, demandReport: { filters: { status: ['Aberta'] } } };
+  const link = { click() { this.clicked = true; }, remove() { this.removed = true; } };
+  ui.document.querySelectorAll = () => [];
+  ui.document.createElement = () => link;
+  ui.document.body = { appendChild: () => {} };
+  const blob = {};
+  let request, revoked, release;
+  ui.URL = { createObjectURL: value => { assert.equal(value, blob); return 'blob:teste'; }, revokeObjectURL: value => { revoked = value; } };
+  ui.setTimeout = callback => { release = callback; };
+  ui.toast = () => {};
+  ui.fetch = async (url, options) => {
+    request = { url, options };
+    return { ok: true, blob: async () => blob, headers: new Map([['content-type', 'application/pdf'], ['content-disposition', 'attachment; filename="relatorio-demandas-2026-11-03.pdf"']]) };
+  };
+  await ui.exportReportPdf();
+  assert.match(request.url, /start=2026-10-01&demandStatus=Aberta/);
+  assert.equal(request.options.headers.authorization, 'Bearer sessao-de-teste');
+  assert.equal(link.download, 'relatorio-demandas-2026-11-03.pdf');
+  assert.equal(link.clicked, true);
+  assert.equal(link.removed, true);
+  assert.equal(ui.state.reportPdfLoading, false);
+  assert.equal(revoked, undefined);
+  release();
+  assert.equal(revoked, 'blob:teste');
 });
 test('série agrega datas sem perder totais e trata ausência de data', () => {
   const ui = context();

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "nodemailer": "^9.0.5",
+    "pdfmake": "0.2.23",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4"
   }

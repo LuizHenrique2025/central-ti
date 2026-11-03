@@ -17,6 +17,8 @@ const { createEncryptedStore } = require('./core/encrypted-store');
 const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
 const { createReportService } = require('./services/report-service');
+const { validateReportPdfFilters, generateReportPdf } = require('./services/report-pdf-service');
+const activeReportExports = new Set();
 const { createFileStore } = require('./storage/file-store');
 const { createPostgresStore } = require('./storage/postgres-store');
 const { createSeedData } = require('./domain/seed-data');
@@ -528,6 +530,22 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/reports') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem acessar relatórios e dados de auditoria.');
     return respond(res, 200, await reportService.report(user, url, now));
+  }
+  if (req.method === 'GET' && pathname === '/api/reports/pdf') {
+    if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem exportar relatórios.');
+    validateReportPdfFilters(url);
+    if (activeReportExports.has(user.id) || activeReportExports.size >= 2) return error(res, 429, 'Há relatórios em geração. Aguarde e tente novamente.');
+    activeReportExports.add(user.id);
+    try {
+      const generatedAt = now();
+      const demand = await reportService.demandReport(user, url);
+      const content = await generateReportPdf(demand, { start: url.searchParams.get('start'), end: url.searchParams.get('end') }, generatedAt);
+      const filenameDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(generatedAt));
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="relatorio-demandas-${filenameDate}.pdf"`, 'content-length': content.length, 'cache-control': 'no-store' });
+      return res.end(content);
+    } finally {
+      activeReportExports.delete(user.id);
+    }
   }
   if (req.method === 'GET' && pathname === '/api/reports/export') {
     if (user.perfil !== 'admin') return error(res, 403, 'Apenas administradores podem exportar relatórios.');
