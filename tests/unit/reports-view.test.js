@@ -50,6 +50,26 @@ test('download impede repetição e restaura o botão quando o servidor recusa a
   assert.deepEqual(messages, ['Sua sessão expirou. Entre novamente.']);
 });
 
+test('aba Exclusões exporta apenas filtros aplicados de exclusões e preserva o período exibido', () => {
+  const ui = context();
+  ui.state.reportTab = 'exclusions';
+  ui.state.exclusionFilters = { status: 'Concluída' };
+  ui.state.demandReportFilters = { status: ['Aberta'] };
+  const report = { period: { start: '2026-01-01', end: '2026-02-01' }, exclusions: { appliedFilters: { user: 'José & equipe', sector: '', type: 'Exclusão de exame', reason: 'Atendimento duplicado', status: 'Tdsa' }, filters: { status: ['Aberta', 'Concluída', 'Tdsa'] } } };
+  ui.state.report = report;
+  const query = ui.reportPdfQuery(report, ui.reportPdfType());
+  assert.equal(query.get('reportType'), 'exclusions');
+  assert.equal(query.get('exclusionUser'), 'José & equipe');
+  assert.equal(query.get('exclusionStatus'), 'Tdsa');
+  assert.equal(query.get('exclusionType'), 'Exclusão de exame');
+  assert.equal(query.get('start'), '2026-01-01');
+  assert.equal(query.has('demandStatus'), false);
+  assert.equal(query.has('exclusionSector'), false);
+  assert.doesNotMatch(ui.reportPdfButton(), /disabled/);
+  ui.state.loading = true;
+  assert.match(ui.reportPdfButton(), /disabled/);
+});
+
 test('download autenticado salva o blob com nome do servidor e libera o recurso após iniciar', async () => {
   const ui = context();
   ui.state.token = 'sessao-de-teste';

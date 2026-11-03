@@ -691,6 +691,14 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   assert.equal(exclusionsData.exclusions.total, 1);
   assert.equal(exclusionsData.exclusions.completed, 1);
   assert.equal(exclusionsData.exclusions.records[0].numeroAtendimento, 'ATD-2026-001');
+  assert.equal(exclusionsData.exclusions.appliedFilters.reason, 'Atendimento duplicado');
+  const exclusionPdf = await request('/api/reports/pdf?reportType=exclusions&exclusionReason=Atendimento%20duplicado', adminToken);
+  assert.equal(exclusionPdf.status, 200);
+  assert.equal(exclusionPdf.headers.get('content-type'), 'application/pdf');
+  assert.match(exclusionPdf.headers.get('content-disposition'), /filename="relatorio-exclusoes-\d{4}-\d{2}-\d{2}\.pdf"/);
+  assert.equal(Buffer.from(await exclusionPdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+  assert.equal((await fetch(`${baseUrl}/api/reports/pdf?reportType=exclusions`)).status, 401);
+  for (const query of ['reportType=inventario', 'reportType=demands&reportType=exclusions', 'reportType=exclusions&exclusionStatus=A&exclusionStatus=B']) assert.equal((await request(`/api/reports/pdf?${query}`, adminToken)).status, 400);
 
   const permissions = { demandas: { list: true, consult: true, create: true, update: false, delete: false } };
   for (const suffix of ['a', 'b']) {
@@ -714,6 +722,7 @@ test('usuários comuns visualizam somente as próprias demandas', async () => {
   const forbiddenPdf = await request('/api/reports/pdf', tokenB);
   assert.equal(forbiddenPdf.status, 403);
   assert.match((await forbiddenPdf.json()).error, /Apenas administradores/);
+  assert.equal((await request('/api/reports/pdf?reportType=exclusions', tokenB)).status, 403);
   const ownMaterial = await request('/api/resources/pedidos', tokenA, { method: 'POST', body: JSON.stringify({ item: 'Mouse', quantidade: '1', setor: 'Setor A', solicitante: 'Nome falso', status: 'Entregue' }) });
   assert.equal(ownMaterial.status, 201);
   const ownMaterialRecord = (await ownMaterial.json()).record;

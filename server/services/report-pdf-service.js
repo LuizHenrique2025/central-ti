@@ -5,9 +5,12 @@ const TONES = [BLUE, '#60778d', '#8d9baa', '#36485b', '#b3bec9', '#718da9'];
 const hasLineBreak = value => /[\r\n\u2028\u2029]/.test(String(value));
 const compactRow = row => row.every(value => String(value).length <= 160 && !hasLineBreak(value));
 const FILTERS = { assignee: 'Responsável', requester: 'Solicitante', sector: 'Setor', reason: 'Motivo', category: 'Categoria', status: 'Status' };
+const EXCLUSION_FILTERS = { user: 'Usuário', sector: 'Setor', type: 'Tipo', reason: 'Motivo', status: 'Status' };
 
 function validateReportPdfFilters(url) {
   const invalid = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
+  const reportTypes = url.searchParams.getAll('reportType');
+  if (reportTypes.length > 1 || (reportTypes.length && !['demands', 'exclusions'].includes(reportTypes[0]))) invalid('Selecione Demandas ou Exclusões para exportar.');
   for (const key of ['start', 'end']) {
     const values = url.searchParams.getAll(key);
     const value = values[0];
@@ -18,6 +21,10 @@ function validateReportPdfFilters(url) {
   for (const key of Object.keys(FILTERS)) {
     const values = url.searchParams.getAll(`demand${key[0].toUpperCase()}${key.slice(1)}`);
     if (values.length > 100 || values.some(value => value.length > 500 || /[\u0000-\u001f]/.test(value))) invalid('Os filtros do relatório são inválidos.');
+  }
+  for (const key of Object.keys(EXCLUSION_FILTERS)) {
+    const values = url.searchParams.getAll(`exclusion${key[0].toUpperCase()}${key.slice(1)}`);
+    if (values.length > 1 || values.some(value => value.length > 500 || /[\u0000-\u001f]/.test(value))) invalid('Os filtros de exclusões são inválidos.');
   }
 }
 
@@ -52,7 +59,7 @@ function barsSvg(rows) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="178"><line x1="0" y1="148" x2="500" y2="148" stroke="#d8e1eb"/>${bars}</svg>`;
 }
 
-function donutSvg(statuses, total) {
+function donutSvg(statuses, total, label = 'Demandas') {
   let angle = -Math.PI / 2;
   const point = value => `${100 + 78 * Math.cos(value)} ${100 + 78 * Math.sin(value)}`;
   const shapes = statuses.map((status, index) => {
@@ -63,7 +70,7 @@ function donutSvg(statuses, total) {
     angle = next;
     return shape;
   }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">${shapes}<circle cx="100" cy="100" r="53" fill="#ffffff"/><text x="100" y="103" text-anchor="middle" font-size="25" fill="${INK}">${total}</text><text x="100" y="123" text-anchor="middle" font-size="10" fill="${MUTED}">Demandas</text></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">${shapes}<circle cx="100" cy="100" r="53" fill="#ffffff"/><text x="100" y="103" text-anchor="middle" font-size="25" fill="${INK}">${total}</text><text x="100" y="123" text-anchor="middle" font-size="10" fill="${MUTED}">${label}</text></svg>`;
 }
 
 function reportTable(title, headers, rows, widths, numericColumns = []) {
@@ -85,54 +92,45 @@ function reportTable(title, headers, rows, widths, numericColumns = []) {
   };
 }
 
-function buildReportPdfDefinition(data) {
-  const { metrics } = data;
-  const period = `${date(data.period.start) || 'Início dos registros'} até ${date(data.period.end) || 'a data de geração'}`;
-  const filters = Object.entries(FILTERS).map(([key, label]) => `${label}: ${data.filters[key]?.join(', ') || 'Todos'}`).join(' · ');
-  const content = [
+function pdfHeader(title, period, generatedAt, filters) {
+  const periodLabel = `${date(period.start) || 'Início dos registros'} até ${date(period.end) || 'a data de geração'}`;
+  return [
     { text: 'HOSPITAL DIA REVITALITE', color: BLUE, bold: true, fontSize: 10, characterSpacing: 1 },
-    { text: 'Relatório de Demandas de TI', fontSize: 23, bold: true, color: INK, margin: [0, 10, 0, 10] },
-    { text: `Período: ${period}`, color: MUTED },
-    { text: `Gerado em ${dateTime(data.generatedAt)} (America/Sao_Paulo)`, color: MUTED, margin: [0, 3, 0, 12] },
-    { text: filters, fontSize: 9, color: MUTED, margin: [0, 0, 0, 16] },
-    {
-      unbreakable: true, columnGap: 12,
-      columns: [
-        ['Total de demandas', metrics.total, 'Registros nos filtros aplicados'],
-        ['Taxa de conclusão', `${metrics.completedPercent}%`, `${metrics.completed} demandas concluídas`],
-        ['Em aberto', metrics.open, 'Aguardam conclusão'],
-        ['Solicitantes distintos', data.requesters, 'Pessoas na consulta']
-      ].map(([label, value, hint]) => ({ width: '*', stack: [{ text: label, color: MUTED, fontSize: 9 }, { text: String(value), color: BLUE, bold: true, fontSize: 26, margin: [0, 7, 0, 5] }, { text: hint, color: MUTED, fontSize: 8 }] }))
-    }
+    { text: title, fontSize: 23, bold: true, color: INK, margin: [0, 10, 0, 10] },
+    { text: `Período: ${periodLabel}`, color: MUTED },
+    { text: `Gerado em ${dateTime(generatedAt)} (America/Sao_Paulo)`, color: MUTED, margin: [0, 3, 0, 12] },
+    { text: filters, fontSize: 9, color: MUTED, margin: [0, 0, 0, 16] }
   ];
-  if (!metrics.total) content.push({ text: 'Nenhuma demanda encontrada para os filtros aplicados', margin: [0, 30, 0, 20], color: MUTED });
-  if (data.months.length) {
-    for (let start = 0; start < data.months.length; start += 12) {
-      content.push({ unbreakable: true, margin: [0, 18, 0, 0], stack: [section(`Demandas abertas por mês${start ? ' (continuação)' : ''}`), { svg: barsSvg(data.months.slice(start, start + 12)), width: 500 }] });
-    }
-  } else if (metrics.total) content.push({ text: 'Sem data de abertura informada para o gráfico mensal.', color: MUTED, margin: [0, 18, 0, 0] });
-  if (metrics.total) {
-    const statusTable = reportTable('Distribuição por status', ['Status', 'Quantidade'], data.statuses.map(status => [status.label, status.total]), ['*', 65], [1]);
-    data.statuses.forEach((status, index) => { statusTable.table.body[index + 2][0].color = TONES[index % TONES.length]; });
-    const chart = { svg: donutSvg(data.statuses, metrics.total), width: 150 };
-    // Legendas curtas acompanham a rosca; listas extensas continuam como tabela paginada.
-    if (data.statuses.length <= 8 && data.statuses.every(status => status.label.length <= 120 && !hasLineBreak(status.label))) {
-      content.push({ unbreakable: true, margin: [0, 18, 0, 0], stack: [section('Demandas por status'), { columns: [{ width: 170, stack: [chart] }, { width: '*', stack: [statusTable] }], columnGap: 18 }] });
-    } else {
-      content.push({ unbreakable: true, margin: [0, 18, 0, 0], stack: [section('Demandas por status'), chart] }, statusTable);
-    }
-  }
-  if (data.professionals.length) content.push(reportTable('Desempenho por profissional', ['Profissional', 'Assumidas', 'Concluídas', 'Em aberto', '% conclusão'], data.professionals.map(person => [person.professional, person.assumed, person.completed, person.open, `${person.completionRate}%`]), ['*', 60, 60, 58, 68], [1, 2, 3, 4]));
-  content.push({ unbreakable: metrics.topRequester.length + metrics.topReason.length <= 1000 && !hasLineBreak(metrics.topRequester) && !hasLineBreak(metrics.topReason), margin: [0, 18, 0, 0], stack: [section('Leitura do período'), { text: [{ text: 'Solicitante com mais demandas: ', bold: true }, metrics.topRequester], margin: [0, 4, 0, 5] }, { text: [{ text: 'Motivo mais frequente: ', bold: true }, metrics.topReason], margin: [0, 0, 0, 5] }, { text: `Acompanhamento: ${metrics.open} demanda(s) em aberto nesta consulta.` }] });
-  if (data.records.length) {
-    const annex = reportTable('Anexo - Demandas do período', ['Nº', 'Data', 'Solicitante', 'Setor', 'Motivo', 'Status', 'Responsável'], data.records.map(record => [record.ticket, record.createdAt ? dateTime(record.createdAt) : 'Sem data', record.requester, record.sector, record.reason, record.status, record.assignee]), [38, 49, '*', 51, '*', 52, 60]);
-    annex.fontSize = 8;
-    annex.pageBreak = 'before';
-    content.push(annex);
-  }
+}
+
+function pdfIndicators(cards) {
+  return {
+    unbreakable: true, columnGap: 12,
+    columns: cards.map(([label, value, hint]) => ({ width: '*', stack: [{ text: label, color: MUTED, fontSize: 9 }, { text: String(value), color: BLUE, bold: true, fontSize: 26, margin: [0, 7, 0, 5] }, { text: hint, color: MUTED, fontSize: 8 }] }))
+  };
+}
+
+function monthlyCharts(months, title, total) {
+  if (!months.length) return total ? [{ text: 'Sem data de abertura informada para o gráfico mensal.', color: MUTED, margin: [0, 18, 0, 0] }] : [];
+  const charts = [];
+  for (let start = 0; start < months.length; start += 12) charts.push({ unbreakable: true, margin: [0, 18, 0, 0], stack: [section(`${title}${start ? ' (continuação)' : ''}`), { svg: barsSvg(months.slice(start, start + 12)), width: 500 }] });
+  return charts;
+}
+
+function statusCharts(statuses, total, label = 'Demandas') {
+  if (!total) return [];
+  const statusTable = reportTable('Distribuição por status', ['Status', 'Quantidade'], statuses.map(status => [status.label, status.total]), ['*', 65], [1]);
+  statuses.forEach((status, index) => { statusTable.table.body[index + 2][0].color = TONES[index % TONES.length]; });
+  const chart = { svg: donutSvg(statuses, total, label), width: 150 };
+  const heading = section(`${label} por status`);
+  if (statuses.length <= 8 && statuses.every(status => status.label.length <= 120 && !hasLineBreak(status.label))) return [{ unbreakable: true, margin: [0, 18, 0, 0], stack: [heading, { columns: [{ width: 170, stack: [chart] }, { width: '*', stack: [statusTable] }], columnGap: 18 }] }];
+  return [{ unbreakable: true, margin: [0, 18, 0, 0], stack: [heading, chart] }, statusTable];
+}
+
+function pdfDocument(title, content) {
   return {
     pageSize: 'A4', pageOrientation: 'portrait', pageMargins: [42, 40, 42, 48],
-    info: { title: 'Relatório de Demandas de TI', author: 'Central TI', subject: 'Hospital Dia Revitalite' },
+    info: { title, author: 'Central TI', subject: 'Hospital Dia Revitalite' },
     defaultStyle: { font: 'Roboto', fontSize: 10, color: INK, lineHeight: 1.2 },
     styles: { section: { fontSize: 12, bold: true, color: INK, margin: [0, 0, 0, 8] } },
     footer: (page, pages) => ({ text: `Central TI · Página ${page} de ${pages}`, alignment: 'center', fontSize: 8, color: MUTED, margin: [42, 16, 42, 0] }),
@@ -141,15 +139,39 @@ function buildReportPdfDefinition(data) {
   };
 }
 
+function buildReportPdfDefinition(data) {
+  const { metrics } = data;
+  const filters = Object.entries(FILTERS).map(([key, label]) => `${label}: ${data.filters[key]?.join(', ') || 'Todos'}`).join(' · ');
+  const content = [
+    ...pdfHeader('Relatório de Demandas de TI', data.period, data.generatedAt, filters),
+    pdfIndicators([
+      ['Total de demandas', metrics.total, 'Registros nos filtros aplicados'],
+      ['Taxa de conclusão', `${metrics.completedPercent}%`, `${metrics.completed} demandas concluídas`],
+      ['Em aberto', metrics.open, 'Aguardam conclusão'],
+      ['Solicitantes distintos', data.requesters, 'Pessoas na consulta']
+    ])
+  ];
+  if (!metrics.total) content.push({ text: 'Nenhuma demanda encontrada para os filtros aplicados', margin: [0, 30, 0, 20], color: MUTED });
+  content.push(...monthlyCharts(data.months, 'Demandas abertas por mês', metrics.total), ...statusCharts(data.statuses, metrics.total));
+  if (data.professionals.length) content.push(reportTable('Desempenho por profissional', ['Profissional', 'Assumidas', 'Concluídas', 'Em aberto', '% conclusão'], data.professionals.map(person => [person.professional, person.assumed, person.completed, person.open, `${person.completionRate}%`]), ['*', 60, 60, 58, 68], [1, 2, 3, 4]));
+  content.push({ unbreakable: metrics.topRequester.length + metrics.topReason.length <= 1000 && !hasLineBreak(metrics.topRequester) && !hasLineBreak(metrics.topReason), margin: [0, 18, 0, 0], stack: [section('Leitura do período'), { text: [{ text: 'Solicitante com mais demandas: ', bold: true }, metrics.topRequester], margin: [0, 4, 0, 5] }, { text: [{ text: 'Motivo mais frequente: ', bold: true }, metrics.topReason], margin: [0, 0, 0, 5] }, { text: `Acompanhamento: ${metrics.open} demanda(s) em aberto nesta consulta.` }] });
+  if (data.records.length) {
+    const annex = reportTable('Anexo - Demandas do período', ['Nº', 'Data', 'Solicitante', 'Setor', 'Motivo', 'Status', 'Responsável'], data.records.map(record => [record.ticket, record.createdAt ? dateTime(record.createdAt) : 'Sem data', record.requester, record.sector, record.reason, record.status, record.assignee]), [38, 49, '*', 51, '*', 52, 60]);
+    annex.fontSize = 8;
+    annex.pageBreak = 'before';
+    content.push(annex);
+  }
+  return pdfDocument('Relatório de Demandas de TI', content);
+}
+
 let printer;
-async function generateReportPdf(demand, period, generatedAt) {
+function renderPdfDefinition(definition) {
   if (!printer) {
     const PdfPrinter = require('pdfmake');
     const vfs = require('pdfmake/build/vfs_fonts');
     const font = name => Buffer.from(vfs[name], 'base64');
     printer = new PdfPrinter({ Roboto: { normal: font('Roboto-Regular.ttf'), bold: font('Roboto-Medium.ttf'), italics: font('Roboto-Italic.ttf'), bolditalics: font('Roboto-MediumItalic.ttf') } });
   }
-  const definition = buildReportPdfDefinition(reportPdfData(demand, period, generatedAt));
   return new Promise((resolve, reject) => {
     const document = printer.createPdfKitDocument(definition);
     const chunks = [];
@@ -160,4 +182,9 @@ async function generateReportPdf(demand, period, generatedAt) {
   });
 }
 
-module.exports = { validateReportPdfFilters, reportPdfData, buildReportPdfDefinition, generateReportPdf };
+async function generateReportPdf(demand, period, generatedAt) {
+  return renderPdfDefinition(buildReportPdfDefinition(reportPdfData(demand, period, generatedAt)));
+}
+
+module.exports = { validateReportPdfFilters, reportPdfData, buildReportPdfDefinition, generateReportPdf,
+  reportPdfLayout: { pdfHeader, pdfIndicators, pdfDocument, monthlyCharts, statusCharts, reportTable, dateTime, renderPdfDefinition, exclusionFilters: EXCLUSION_FILTERS } };

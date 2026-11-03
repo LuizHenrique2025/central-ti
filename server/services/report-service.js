@@ -57,6 +57,12 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
     return { filters, selectors, records, metrics: { total, completed, open: total - completed, completedPercent: percent(completed, total), topRequester: mainReasons[0]?.requester || '—', topReason: countBy(records, record => record.reason)[0]?.label || '—' }, mainReasons, professionals, reasons: countBy(records, record => record.reason), requesters: countBy(records, record => record.requester), statuses: countBy(records, record => record.status), openedByDate };
   }
 
+  async function exclusionReport(user, url, existingDemands) {
+    const demands = existingDemands ?? (await getStore().records('demandas')).filter(record => demandBelongsToUser(record, user) && inPeriod(record, url.searchParams.get('start'), url.searchParams.get('end')));
+    const appliedFilters = exclusionFilters(url);
+    return { ...buildExclusionReport(demands, appliedFilters), appliedFilters };
+  }
+
   async function report(user, url, generatedAt) {
     const store = getStore();
     const start = url.searchParams.get('start');
@@ -75,7 +81,7 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
     const programCosts = activePrograms.reduce((costs, record) => { const value = Number(record.valor); if (record.periodicidade === 'Mensal') costs.monthly += value; else costs.annual += value; return costs; }, { monthly: 0, annual: 0 });
     programCosts.monthlyEquivalent = Math.round(programCosts.monthly + programCosts.annual / 12);
     programCosts.annualEquivalent = programCosts.monthly * 12 + programCosts.annual;
-    const exclusions = buildExclusionReport(demands, exclusionFilters(url));
+    const exclusions = await exclusionReport(user, url, demands);
     const audit = user.perfil === 'admin' ? (await store.audits()).filter(record => inPeriod(record, start, end)).slice(0, 100) : [];
     return { generatedAt: generatedAt(), period: { start, end }, modules, total: modules.reduce((sum, item) => sum + item.total, 0), alerts, demandStatus, demandReport: await demandReport(user, url), lowStock: [], programCosts, activePrograms: activePrograms.length, exclusions, audit };
   }
@@ -103,7 +109,7 @@ function createReportService({ getStore, resourceDefinitions, canAccess, demandB
     return csvDocument(rows);
   }
 
-  return { report, exportCsv, demandReport };
+  return { report, exportCsv, demandReport, exclusionReport };
 }
 
 module.exports = { createReportService };

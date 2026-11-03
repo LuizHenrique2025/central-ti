@@ -9,26 +9,36 @@ function reportDateSeries(rows) {
   return { mode, rows: [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([label, total]) => ({ label, total })) };
 }
 
-function reportPdfQuery(report) {
+function reportPdfType() { return state.reportTab === 'exclusions' ? 'exclusions' : 'demands'; }
+
+function hasPdfReport(report, type) { return type === 'exclusions' ? Boolean(report?.exclusions?.appliedFilters) : Boolean(report?.demandReport); }
+
+function reportPdfQuery(report, type = 'demands') {
   const query = new URLSearchParams();
   for (const key of ['start', 'end']) if (report.period?.[key]) query.set(key, report.period[key]);
-  for (const [key, values] of Object.entries(report.demandReport.filters)) {
-    for (const value of values) query.append(`demand${key[0].toUpperCase()}${key.slice(1)}`, value);
+  if (type === 'exclusions') {
+    query.set('reportType', 'exclusions');
+    for (const [key, value] of Object.entries(report.exclusions.appliedFilters)) if (value) query.set(`exclusion${key[0].toUpperCase()}${key.slice(1)}`, value);
+  } else {
+    for (const [key, values] of Object.entries(report.demandReport.filters)) {
+      for (const value of values) query.append(`demand${key[0].toUpperCase()}${key.slice(1)}`, value);
+    }
   }
   return query;
 }
 
 function reportPdfButton() {
-  const disabled = state.loading || state.reportPdfLoading || !state.report?.demandReport;
+  const disabled = state.loading || state.reportPdfLoading || !hasPdfReport(state.report, reportPdfType());
   return `<button type="button" class="add-record" data-action="export-report-pdf" aria-busy="${Boolean(state.reportPdfLoading)}" ${disabled ? 'disabled' : ''}>${state.reportPdfLoading ? 'Gerando PDF…' : 'Exportar PDF'}</button>`;
 }
 
 async function exportReportPdf() {
-  if (state.loading || state.reportPdfLoading || !state.report?.demandReport) return;
-  const query = reportPdfQuery(state.report);
+  const type = reportPdfType();
+  if (state.loading || state.reportPdfLoading || !hasPdfReport(state.report, type)) return;
+  const query = reportPdfQuery(state.report, type);
   state.reportPdfLoading = true;
   const updateButtons = () => document.querySelectorAll('[data-action="export-report-pdf"]').forEach(button => {
-    button.disabled = Boolean(state.reportPdfLoading || state.loading);
+    button.disabled = Boolean(state.reportPdfLoading || state.loading || !hasPdfReport(state.report, reportPdfType()));
     button.setAttribute('aria-busy', String(state.reportPdfLoading));
     button.textContent = state.reportPdfLoading ? 'Gerando PDF…' : 'Exportar PDF';
   });
@@ -45,7 +55,7 @@ async function exportReportPdf() {
     objectUrl = URL.createObjectURL(await response.blob());
     link = document.createElement('a');
     link.href = objectUrl;
-    link.download = response.headers.get('content-disposition')?.match(/filename="([\w.-]+)"/)?.[1] || 'relatorio-demandas.pdf';
+    link.download = response.headers.get('content-disposition')?.match(/filename="([\w.-]+)"/)?.[1] || `relatorio-${type === 'exclusions' ? 'exclusoes' : 'demandas'}.pdf`;
     document.body.appendChild(link);
     link.click();
     toast('PDF gerado. Download iniciado.');
