@@ -18,6 +18,7 @@ const { createEmailService } = require('./services/email-service');
 const { createSessionService } = require('./services/session-service');
 const { createReportService } = require('./services/report-service');
 const { validateReportPdfFilters, generateReportPdf } = require('./services/report-pdf-service');
+const { generateExclusionReportPdf } = require('./services/exclusion-report-pdf-service');
 const activeReportExports = new Set();
 const { createFileStore } = require('./storage/file-store');
 const { createPostgresStore } = require('./storage/postgres-store');
@@ -538,10 +539,12 @@ async function api(req, res, url) {
     activeReportExports.add(user.id);
     try {
       const generatedAt = now();
-      const demand = await reportService.demandReport(user, url);
-      const content = await generateReportPdf(demand, { start: url.searchParams.get('start'), end: url.searchParams.get('end') }, generatedAt);
+      const exclusions = url.searchParams.get('reportType') === 'exclusions';
+      const data = await (exclusions ? reportService.exclusionReport(user, url) : reportService.demandReport(user, url));
+      const generate = exclusions ? generateExclusionReportPdf : generateReportPdf;
+      const content = await generate(data, { start: url.searchParams.get('start'), end: url.searchParams.get('end') }, generatedAt);
       const filenameDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(generatedAt));
-      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="relatorio-demandas-${filenameDate}.pdf"`, 'content-length': content.length, 'cache-control': 'no-store' });
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="relatorio-${exclusions ? 'exclusoes' : 'demandas'}-${filenameDate}.pdf"`, 'content-length': content.length, 'cache-control': 'no-store' });
       return res.end(content);
     } finally {
       activeReportExports.delete(user.id);
